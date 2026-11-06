@@ -34,6 +34,7 @@ struct LoginView: View {
     @State private var showingServerOptions = false
     @State private var backendInput = ""
     @State private var trustServer = false
+    @StateObject private var discovery = LocalServerDiscovery()
 
     var body: some View {
         ZStack {
@@ -53,9 +54,21 @@ struct LoginView: View {
                 triggerContinue()
                 return
             }
+            // Boomio: nothing can be signed in to until a box is chosen, so
+            // open the server section and start looking for one immediately.
+            if !auth.isBackendConfigured {
+                showingServerOptions = true
+                discovery.start()
+            }
             selectSupportedMethod(startQR: true)
         }
-        .onDisappear { auth.stopQrLogin() }
+        .onDisappear {
+            auth.stopQrLogin()
+            discovery.stop()
+        }
+        .onChange(of: auth.isBackendConfigured) { _, configured in
+            if configured { discovery.stop() }
+        }
         .onChange(of: method) { _, newMethod in
             auth.errorMessage = nil
             if newMethod == .qr && auth.serverCapabilities.tvLogin {
@@ -187,9 +200,15 @@ struct LoginView: View {
                 systemImage: "server.rack"
             ) {
                 showingServerOptions.toggle()
-                if showingServerOptions { backendInput = AuthConfig.apiBaseURL == AuthConfig.officialAPIBaseURL ? "" : AuthConfig.apiBaseURL }
+                if showingServerOptions {
+                    backendInput = AuthConfig.apiBaseURL
+                    discovery.start()
+                } else {
+                    discovery.stop()
+                }
             }
             if showingServerOptions {
+                discoveredBoxes
                 LoginGlassField(
                     placeholder: L10n.string("auth_backend_url", fallback: "Backend URL"),
                     text: $backendInput,
@@ -254,14 +273,51 @@ struct LoginView: View {
                     }
                 }
                 if AuthConfig.isCustom {
-                    LoginButton(title: L10n.string("auth_use_official_server", fallback: "Use Official Server"), systemImage: "arrow.uturn.backward") {
-                        let shouldStartQR = method == .qr
-                        auth.useOfficialServer()
+                    LoginButton(
+                        title: L10n.string("auth_change_server", fallback: "Change Server"),
+                        systemImage: "arrow.uturn.backward"
+                    ) {
+                        auth.clearServerConfiguration()
                         method = .qr
-                        showingServerOptions = false
-                        if shouldStartQR { auth.startQrLogin() }
+                        backendInput = ""
+                        trustServer = false
+                        showingServerOptions = true
+                        discovery.start()
                     }
                 }
+            }
+        }
+    }
+
+    /// Boomio: boxes found over Bonjour, listed ahead of manual entry. Tapping
+    /// one only fills in the URL and runs the normal `/.well-known/nuvio`
+    /// check below — the advert itself is unauthenticated, so the user still
+    /// has to confirm trust in the result.
+    private var discoveredBoxes: some View {
+        Group {
+            if !discovery.boxes.isEmpty {
+                VStack(spacing: 10) {
+                    Text(L10n.string("auth_discovered_boxes", fallback: "Found on your network"))
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    ForEach(discovery.boxes) { box in
+                        LoginButton(title: box.name, systemImage: "appletv") {
+                            backendInput = box.backendURL
+                            trustServer = false
+                            auth.clearDiscoveredServer()
+                            Task { await auth.discoverCustomServer(input: box.backendURL) }
+                        }
+                    }
+                }
+            } else if discovery.isSearching {
+                HStack(spacing: 12) {
+                    ProgressView()
+                    Text(L10n.string("auth_searching_boxes", fallback: "Looking for a Boomio box on your network…"))
+                        .font(.system(size: 17))
+                        .foregroundColor(.white.opacity(0.7))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }

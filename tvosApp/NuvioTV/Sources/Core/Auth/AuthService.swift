@@ -19,11 +19,12 @@ struct AuthService {
 
     private var baseURL: String { configuration.normalizedBackendURL }
     private var apiKey: String { configuration.publishableKey }
+    // Boomio: every configuration is a self-hosted one, so the TV-login page
+    // always lives on the selected backend.
     private var tvLoginWebBaseURL: String {
-        if isCustom { return configuration.normalizedBackendURL + "/tv-login" }
-        return AuthConfig.officialTvLoginWebBaseURL
+        configuration.normalizedBackendURL + "/tv-login"
     }
-    private var isCustom: Bool { configuration.backendIdentity != AuthConfig.officialAPIBaseURL }
+    private var isCustom: Bool { !configuration.backendIdentity.isEmpty }
     private var backendIdentity: String { configuration.backendIdentity }
 
     // MARK: - Email auth
@@ -93,32 +94,9 @@ struct AuthService {
                 }
             }
 
-            guard !isCustom,
-                  shouldRetryLegacyRedirectBase(lastError),
-                  AuthConfig.legacyTvLoginWebBaseURL != tvLoginWebBaseURL else {
-                throw lastError
-            }
-
-            do {
-                return try await startTvLoginSessionRequest(
-                    accessToken: accessToken,
-                    deviceNonce: deviceNonce,
-                    deviceName: deviceName,
-                    redirectBaseURL: AuthConfig.legacyTvLoginWebBaseURL,
-                    includeDeviceName: includeDeviceName
-                )
-            } catch {
-                if includeDeviceName && shouldRetryWithoutDeviceName(error) {
-                    return try await startTvLoginSessionRequest(
-                        accessToken: accessToken,
-                        deviceNonce: deviceNonce,
-                        deviceName: deviceName,
-                        redirectBaseURL: AuthConfig.legacyTvLoginWebBaseURL,
-                        includeDeviceName: false
-                    )
-                }
-                throw error
-            }
+            // Boomio: the legacy-redirect retry only existed for upstream's
+            // hosted backend; every configured server here is self-hosted.
+            throw lastError
         }
     }
 

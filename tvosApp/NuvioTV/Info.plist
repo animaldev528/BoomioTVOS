@@ -76,6 +76,7 @@
 		<string>_http._tcp</string>
 		<string>_googlecast._tcp</string>
 		<string>_CC1AD845._googlecast._tcp</string>
+		<string>_boomio-overlay._udp</string>
 	</array>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>

@@ -62,10 +62,9 @@ final class AuthReauthFlowTests: XCTestCase {
     }
 
     func testTvLoginWebBaseURL() {
-        XCTAssertEqual(AuthConfig.officialTvLoginWebBaseURL, "https://nuvio.tv/tv-login")
-        XCTAssertEqual(AuthConfig.officialAPIBaseURL, "https://api.nuvio.tv")
-        XCTAssertEqual(AuthConfig.tvLoginWebBaseURL, "https://nuvio.tv/tv-login")
-        XCTAssertFalse(AuthConfig.tvLoginWebBaseURL.contains("api.nuvio.tv"))
+        // Boomio bakes in no backend: the TV-login page is always served by the
+        // box the user selected, so it can never point at upstream Nuvio.
+        XCTAssertFalse(AuthConfig.tvLoginWebBaseURL.contains("nuvio.tv"))
     }
 
     func testTvLoginStartResultSanitizesAPINuvioURL() throws {

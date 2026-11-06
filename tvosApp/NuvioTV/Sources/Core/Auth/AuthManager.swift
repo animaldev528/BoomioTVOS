@@ -354,7 +354,9 @@ final class AuthManager: ObservableObject {
         return true
     }
 
-    func useOfficialServer() {
+    /// Forgets the saved server so the login screen goes back to discovery /
+    /// manual entry. (Boomio has no built-in backend to fall back to.)
+    func clearServerConfiguration() {
         contextWillChange.send(())
         invalidateAuthOperations()
         clearQrState()
