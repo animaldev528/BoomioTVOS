@@ -1,0 +1,63 @@
+name: Build tvOS IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to attach the IPA to (leave empty for artifact only)"
+        required: false
+        type: string
+  push:
+    tags:
+      - "tvos-*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # GitHub-hosted Apple Silicon macOS. Xcode selection is the image default;
+    # the "Show toolchain" step records exactly which one built the IPA.
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcode-select -p
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i tvos || true
+
+      - name: Install pinned toolchain (mise -> tuist)
+        run: |
+          brew install mise
+          mise install
+          mise exec -- tuist version
+
+      - name: Build unsigned IPA
+        run: bash scripts/build-ipa.sh
+
+      - name: Report output
+        run: ls -lh build-ipa/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: boomio-tvos-ipa
+          path: build-ipa/*.ipa
+          if-no-files-found: error
+
+      - name: Attach IPA to release
+        if: inputs.tag != '' || startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag }}"
+          if [ -z "$TAG" ]; then TAG="${GITHUB_REF_NAME}"; fi
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --title "$TAG" --notes "Unsigned tvOS build"
+          gh release upload "$TAG" build-ipa/*.ipa --clobber
