@@ -65,9 +65,16 @@ final class LocalServerDiscovery: ObservableObject {
                 case .ready:
                     self.isSearching = true
                     self.failureMessage = nil
+                case .waiting(let error):
+                    // A denied local-network permission does not fail the
+                    // browser — it parks in .waiting with DNS policy-denied
+                    // (-65555) and never produces a result. Surface it, or
+                    // the screen says "Searching…" forever with no clue.
+                    self.isSearching = true
+                    self.failureMessage = Self.message(for: error)
                 case .failed(let error):
                     self.isSearching = false
-                    self.failureMessage = String(describing: error)
+                    self.failureMessage = Self.message(for: error)
                 case .cancelled:
                     self.isSearching = false
                 default:
@@ -107,6 +114,18 @@ final class LocalServerDiscovery: ObservableObject {
         }
         next.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         boxes = next
+    }
+
+    private static func message(for error: NWError) -> String {
+        // kDNSServiceErr_PolicyDenied: the app is not allowed to use the
+        // local network. tvOS never asks twice, so the way back is to delete
+        // and reinstall the app and choose Allow on the prompt.
+        if case let .dns(code) = error, code == -65555 {
+            return "Apple TV is blocking local-network access for this app. "
+                + "Delete the app, reinstall it, and choose Allow when it asks "
+                + "to find devices on your network."
+        }
+        return String(describing: error)
     }
 
     private static func box(from result: NWBrowser.Result) -> Box? {
