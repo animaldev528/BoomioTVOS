@@ -148,7 +148,10 @@ struct LoginView: View {
 
     private var rightPane: some View {
         VStack(alignment: .center, spacing: 24) {
-            if !auth.isAuthenticated {
+            // Boomio: with no box selected there is nothing to sign in to.
+            // Showing the QR pane here only yields "no server is configured"
+            // and pushes the Connect button off a card that cannot scroll.
+            if !auth.isAuthenticated && auth.isBackendConfigured {
                 methodToggle
             }
 
@@ -156,6 +159,8 @@ struct LoginView: View {
 
             if auth.isAuthenticated {
                 connectedContent
+            } else if !auth.isBackendConfigured {
+                EmptyView()
             } else if method == .qr {
                 qrContent
             } else {
@@ -310,6 +315,27 @@ struct LoginView: View {
                         }
                     }
                 }
+            } else if let failure = discovery.failureMessage {
+                VStack(spacing: 10) {
+                    Text(L10n.string(
+                        "auth_lan_search_failed",
+                        fallback: "Couldn't search the local network — enter the address below."
+                    ))
+                        .font(.system(size: 17))
+                        .foregroundColor(.orange)
+                        .multilineTextAlignment(.center)
+                    Text(failure)
+                        .font(.system(size: 14))
+                        .foregroundColor(.white.opacity(0.5))
+                        .multilineTextAlignment(.center)
+                    LoginButton(
+                        title: L10n.string("auth_search_again", fallback: "Search Again"),
+                        systemImage: "arrow.clockwise"
+                    ) {
+                        discovery.restart()
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             } else if discovery.isSearching {
                 HStack(spacing: 12) {
                     ProgressView()

@@ -44,11 +44,15 @@ final class LocalServerDiscovery: ObservableObject {
 
     @Published private(set) var boxes: [Box] = []
     @Published private(set) var isSearching = false
+    /// Set when the browser itself fails (usually denied local-network
+    /// access). The UI shows it instead of silently listing nothing.
+    @Published private(set) var failureMessage: String?
 
     private var browser: NWBrowser?
 
     func start() {
         guard browser == nil else { return }
+        failureMessage = nil
 
         let parameters = NWParameters.udp
         parameters.includePeerToPeer = false
@@ -60,7 +64,11 @@ final class LocalServerDiscovery: ObservableObject {
                 switch state {
                 case .ready:
                     self.isSearching = true
-                case .failed, .cancelled:
+                    self.failureMessage = nil
+                case .failed(let error):
+                    self.isSearching = false
+                    self.failureMessage = String(describing: error)
+                case .cancelled:
                     self.isSearching = false
                 default:
                     break
@@ -81,6 +89,13 @@ final class LocalServerDiscovery: ObservableObject {
         browser?.cancel()
         browser = nil
         isSearching = false
+    }
+
+    func restart() {
+        stop()
+        boxes = []
+        failureMessage = nil
+        start()
     }
 
     private func apply(_ results: Set<NWBrowser.Result>) {
