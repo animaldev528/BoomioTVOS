@@ -4746,15 +4746,10 @@ private struct TVMainTabView: View {
                 }
             }
             if !genreCollectionDestinations.isEmpty {
-                if #available(tvOS 27.0, *) {
-                    // tvOS supports the automatic policy, but not an explicit
-                    // collapsed default. Keep the system's native behavior;
-                    // header interaction still needs verification on Apple TV.
-                    genreTabSection.defaultSectionExpansion(.automatic)
-                } else {
-                    // Earlier systems retain a usable, expanded native section.
-                    genreTabSection
-                }
+                // Boomio: built against the tvOS 26 SDK, which has no
+                // TabContent.defaultSectionExpansion. The tvOS 27 branch is
+                // dropped; systems below 27 get the expanded native section.
+                genreTabSection
             }
         }
     }
@@ -4776,17 +4771,9 @@ private struct TVMainTabView: View {
 
     @ViewBuilder
     private var tabShell: some View {
-        if #available(tvOS 27.0, *) {
-            groupedCollectionTabs
-                .tabViewSidebarHeader {
-                    TVSidebarProfileHeader(profile: displayedProfile) {
-                        guard !isProfileFocusPending else { return }
-                        if selectedTab == .settings { syncManager.flushPendingPushes() }
-                        onSwitchProfile()
-                    }
-                    .disabled(isProfileFocusPending)
-                }
-        } else if #available(tvOS 18.0, *) {
+        // Boomio: tabViewSidebarHeader is tvOS 27-only and absent from the
+        // tvOS 26 SDK, so the sidebar header branch is dropped.
+        if #available(tvOS 18.0, *) {
             groupedCollectionTabs
         } else {
             standardTabs
