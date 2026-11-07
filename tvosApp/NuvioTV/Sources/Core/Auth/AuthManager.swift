@@ -49,6 +49,10 @@ final class AuthManager: ObservableObject {
     // QR login UI state.
     @Published var qrImage: UIImage?
     @Published var qrCode: String?
+    /// The approval page for the current code. Shown on screen: the QR can
+    /// only be scanned with a camera, and a phone that is already in hand is
+    /// usually showing an app version without a code-entry screen.
+    @Published var qrWebUrl: String?
     @Published var qrStatusMessage: String?
     @Published var qrExpiresAt: Date?
 
@@ -424,7 +428,7 @@ final class AuthManager: ObservableObject {
         if !force,
            let expires = qrExpiresAt, expires.timeIntervalSinceNow > 30,
            qrCode != nil, qrNonce != nil, qrAnonAccessToken != nil, qrImage != nil {
-            qrStatusMessage = "Waiting for approval on your phone…"
+            qrStatusMessage = "Waiting for approval…"
             startPolling(
                 intervalSeconds: 2,
                 operation: currentAuthOperation(),
@@ -472,6 +476,7 @@ final class AuthManager: ObservableObject {
                 )
                 guard self.isCurrent(operation), self.isCurrent(qrOperation) else { return }
                 self.qrCode = start.code
+                self.qrWebUrl = start.webUrl
                 self.qrImage = QRCode.image(from: start.webUrl)
                 self.qrExpiresAt = Self.parseDate(start.expiresAt)
                 self.qrStatusMessage = "Scan QR, approve in browser, then return here."
@@ -561,7 +566,7 @@ final class AuthManager: ObservableObject {
                 pollTask?.cancel()
                 pollTask = nil
             case "pending":
-                qrStatusMessage = "Waiting for approval on your phone…"
+                qrStatusMessage = "Waiting for approval…"
             case "expired", "used", "cancelled":
                 qrStatusMessage = "QR login expired. Generate a new code."
                 // Dead session: drop the expiry so the reuse path in
@@ -606,6 +611,7 @@ final class AuthManager: ObservableObject {
     private func clearQrState() {
         qrImage = nil
         qrCode = nil
+        qrWebUrl = nil
         qrExpiresAt = nil
         qrNonce = nil
         qrAnonAccessToken = nil

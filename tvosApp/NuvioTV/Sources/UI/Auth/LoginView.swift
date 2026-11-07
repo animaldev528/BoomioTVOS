@@ -386,6 +386,18 @@ struct LoginView: View {
                     .foregroundColor(.white)
             }
 
+            // The address to approve at, spelled out. A viewer who cannot scan
+            // the QR (no camera, or an app without a code-entry screen) needs
+            // to be able to type it, and `webUrl` is only ever set by the
+            // server, so showing it adds no guessing.
+            if let url = auth.qrWebUrl, !url.isEmpty {
+                Text(Self.readable(url))
+                    .font(.system(size: 16, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.6))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+            }
+
             if let expires = auth.qrExpiresAt {
                 CountdownText(target: expires)
             }
@@ -481,6 +493,18 @@ struct LoginView: View {
             .padding(.vertical, 12)
             .background((isError ? Color.red.opacity(0.18) : Color.white.opacity(0.06)))
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    /// Strips the scheme so the address fits on one line. The query string is
+    /// kept — the login code lives in it, and the page needs it to approve.
+    private static func readable(_ url: String) -> String {
+        var text = url
+        for prefix in ["https://", "http://"] where text.hasPrefix(prefix) {
+            text.removeFirst(prefix.count)
+            break
+        }
+        while text.hasSuffix("/") { text.removeLast() }
+        return text
     }
 }
 
