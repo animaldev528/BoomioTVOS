@@ -12,7 +12,7 @@ import Foundation
 import UIKit
 
 enum NuvioDeviceRegistrationCapability {
-    private static let unsupportedClientMessage = "Unsupported Nuvio client"
+    private static let unsupportedClientMessage = "Unsupported Boomio client"
 
     static var clientVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
@@ -418,7 +418,7 @@ final class NuvioSyncManager: ObservableObject {
         } catch is CancellationError {
             return
         } catch {
-            print("Nuvio home catalog settings push failed: \(error.localizedDescription)")
+            print("Boomio home catalog settings push failed: \(error.localizedDescription)")
         }
     }
 
@@ -697,8 +697,8 @@ final class NuvioSyncManager: ObservableObject {
                     // delayed or broken server read returned only the old
                     // default row. The user can still select it immediately;
                     // a later retry will reconcile once Nuvio confirms it.
-                    self.profileSyncError = "Profile saved on this Apple TV, but Nuvio has not confirmed it yet."
-                    print("Nuvio profile save was not yet confirmed; keeping the local profile list.")
+                    self.profileSyncError = "Profile saved on this Apple TV, but Boomio has not confirmed it yet."
+                    print("Boomio profile save was not yet confirmed; keeping the local profile list.")
                     return
                 }
                 let merged = ProfileSyncIndexStore.localProfiles(
@@ -714,7 +714,7 @@ final class NuvioSyncManager: ObservableObject {
                     throw AuthError(message: "The saved profiles could not be applied on this Apple TV.")
                 }
                 self.profileSyncError = nil
-                print("Nuvio sync saved and confirmed \(remoteProfiles.count) profile(s).")
+                print("Boomio sync saved and confirmed \(remoteProfiles.count) profile(s).")
             } catch is CancellationError {
                 guard self.profileEditSyncEpoch == editEpoch,
                       self.currentSyncKey() == syncKey else { return }
@@ -726,7 +726,7 @@ final class NuvioSyncManager: ObservableObject {
                 self.isApplyingRemoteProfiles = false
                 self.isApplyingRemote = false
                 self.profileSyncError = "Couldn't save profiles: \(error.localizedDescription)"
-                print("Nuvio profile sync failed: \(error.localizedDescription)")
+                print("Boomio profile sync failed: \(error.localizedDescription)")
             }
         }
     }
@@ -737,7 +737,7 @@ final class NuvioSyncManager: ObservableObject {
             guard let remote = remoteProfiles.first(where: { $0.profileIndex == remoteId }) else {
                 return false
             }
-            let remoteName = remote.name.isEmpty ? "Nuvio User" : remote.name
+            let remoteName = remote.name.isEmpty ? "Boomio User" : remote.name
             return remoteName == local.name
                 && remote.effectiveAvatarValue == local.avatarId
                 && remote.usesPrimaryAddons == local.usesPrimaryAddons
@@ -842,7 +842,7 @@ final class NuvioSyncManager: ObservableObject {
                 // complete Home/account pull. Do not depend on the timing of
                 // SwiftUI's `$activeProfile` delivery to start it.
                 shouldPullFullAccount = true
-                print("Nuvio profile picker refreshed \(remoteProfiles.count) account profile(s).")
+                print("Boomio profile picker refreshed \(remoteProfiles.count) account profile(s).")
                 return
             } catch {
                 guard profileRecoveryIsCurrent(generation: generation, accountId: recoveryAccountId) else { return }
@@ -990,7 +990,7 @@ final class NuvioSyncManager: ObservableObject {
             )
             return true
         } catch {
-            print("Nuvio watch progress push failed: \(error.localizedDescription)")
+            print("Boomio watch progress push failed: \(error.localizedDescription)")
             return false
         }
     }
@@ -1012,7 +1012,7 @@ final class NuvioSyncManager: ObservableObject {
             )
             return true
         } catch {
-            print("Nuvio watch progress delete failed: \(error.localizedDescription)")
+            print("Boomio watch progress delete failed: \(error.localizedDescription)")
             return false
         }
     }
@@ -1209,7 +1209,7 @@ final class NuvioSyncManager: ObservableObject {
 
     /// Returns the default profile payload to initialize on a new or empty account.
     /// Preserves existing local non-placeholder profiles if available, or seeds
-    /// the primary "Nuvio User" profile.
+    /// the primary "Boomio User" profile.
     private func defaultInitialProfiles() -> [Profile] {
         if let profiles = profileViewModel?.profiles {
             let nonPlaceholders = profiles.filter { !Self.isPlaceholderProfile($0) }
@@ -1222,7 +1222,7 @@ final class NuvioSyncManager: ObservableObject {
         return [
             Profile(
                 id: "1",
-                name: "Nuvio User",
+                name: "Boomio User",
                 isPinProtected: false,
                 isAdmin: true,
                 avatarId: "",
@@ -1281,16 +1281,16 @@ final class NuvioSyncManager: ObservableObject {
                     try await client.registerCurrentDevice(session: session)
                     try ensureStillSyncing(accountId: session.userId)
                     lastDeviceRegistrationAt = Date()
-                    print("Nuvio sync registered this Apple TV as a linked device.")
+                    print("Boomio sync registered this Apple TV as a linked device.")
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
                     try ensureStillSyncing(accountId: session.userId)
                     if NuvioDeviceRegistrationCapability.isExplicitlyUnsupported(error) {
                         unsupportedDeviceRegistrationKey = registrationKey
-                        print("Nuvio device registration unsupported by server for Nuvio tvOS.")
+                        print("Boomio device registration unsupported by server for Boomio tvOS.")
                     } else {
-                        print("Nuvio device registration skipped: \(error.localizedDescription)")
+                        print("Boomio device registration skipped: \(error.localizedDescription)")
                     }
                 }
             }
@@ -1306,7 +1306,7 @@ final class NuvioSyncManager: ObservableObject {
                 // with delay in case a newly issued token is racing replica
                 // visibility of an existing account.
                 if attempt == 0 {
-                    lastError = AuthError(message: "Nuvio has not returned the account profiles yet.")
+                    lastError = AuthError(message: "Boomio has not returned the account profiles yet.")
                     continue
                 }
 
@@ -1314,7 +1314,7 @@ final class NuvioSyncManager: ObservableObject {
                 // (e.g. created on Apple TV or web without a server profile row).
                 // Create and push the default primary profile so account sync and
                 // subsequent mutations are unblocked.
-                print("Nuvio sync: account has no remote profiles; creating default primary profile.")
+                print("Boomio sync: account has no remote profiles; creating default primary profile.")
                 let initialProfiles = defaultInitialProfiles()
                 try await client.pushProfiles(session: session, profiles: initialProfiles)
                 try ensureStillSyncing()
@@ -1346,7 +1346,7 @@ final class NuvioSyncManager: ObservableObject {
     /// One wording for the state where the account is still configured on this
     /// Apple TV but its session can no longer be renewed.
     nonisolated static let reauthenticationMessage =
-        "Your Nuvio session expired. Sign in again to resume syncing."
+        "Your Boomio session expired. Sign in again to resume syncing."
 
     private func pullThenPush(generation: UInt) async {
         // Release the who's-watching sync gate on every exit path; the happy
@@ -1382,7 +1382,7 @@ final class NuvioSyncManager: ObservableObject {
                 throw AuthError(message: "The downloaded profiles could not be applied on this Apple TV.")
             }
             profileSyncError = nil
-            print("Nuvio sync pulled \(remoteProfiles.count) account profile(s).")
+            print("Boomio sync pulled \(remoteProfiles.count) account profile(s).")
 
             guard let activeProfile = profileViewModel.activeProfile ?? profileViewModel.profiles.first else {
                 return
@@ -1432,7 +1432,7 @@ final class NuvioSyncManager: ObservableObject {
                 // add-ons, catalog layout, and progress, but do not enable the
                 // later snapshot push after this partial reconciliation.
                 profileSettingsReconciled = false
-                print("Nuvio profile settings sync failed: \(error.localizedDescription)")
+                print("Boomio profile settings sync failed: \(error.localizedDescription)")
             }
 
             // These reads are independent. Fetch them together, then apply their
@@ -1479,13 +1479,13 @@ final class NuvioSyncManager: ObservableObject {
                                          originatingProfileId: activeProfile.id)
                 }
                 Self.addonSyncDiagnostic = "remote \(remoteAddons.count), enabled \(appliedCount)"
-                print("Nuvio sync pulled \(appliedCount) enabled add-on(s).")
+                print("Boomio sync pulled \(appliedCount) enabled add-on(s).")
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
                 pullFailures += 1
                 Self.addonSyncDiagnostic = "failed: \(error.localizedDescription)"
-                print("Nuvio add-on sync failed: \(error.localizedDescription)")
+                print("Boomio add-on sync failed: \(error.localizedDescription)")
             }
 
             do {
@@ -1497,15 +1497,15 @@ final class NuvioSyncManager: ObservableObject {
                         return CollectionsStore.collections().count
                     }.value
                     try ensureStillSyncing(profileId: activeProfile.id)
-                    print("Nuvio sync pulled collections (\(collectionsBlob.count) bytes, \(count) collection(s)).")
+                    print("Boomio sync pulled collections (\(collectionsBlob.count) bytes, \(count) collection(s)).")
                 } else {
-                    print("Nuvio sync pulled collections: server returned none.")
+                    print("Boomio sync pulled collections: server returned none.")
                 }
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
                 pullFailures += 1
-                print("Nuvio collections sync failed: \(error.localizedDescription)")
+                print("Boomio collections sync failed: \(error.localizedDescription)")
             }
 
             do {
@@ -1517,7 +1517,7 @@ final class NuvioSyncManager: ObservableObject {
                         homeCatalogRevision &+= 1
                     }
                     Self.catalogSettingsSyncDiagnostic = "pulled \(catalogSettings.items.count) item(s)"
-                    print("Nuvio sync pulled home catalog settings (\(catalogSettings.items.count) item(s)).")
+                    print("Boomio sync pulled home catalog settings (\(catalogSettings.items.count) item(s)).")
                 } else {
                     Self.catalogSettingsSyncDiagnostic = "server returned none"
                 }
@@ -1526,7 +1526,7 @@ final class NuvioSyncManager: ObservableObject {
             } catch {
                 pullFailures += 1
                 Self.catalogSettingsSyncDiagnostic = "failed: \(error.localizedDescription)"
-                print("Nuvio home catalog sync failed: \(error.localizedDescription)")
+                print("Boomio home catalog sync failed: \(error.localizedDescription)")
             }
 
             // Pull each watch-state collection independently so one failing
@@ -1544,13 +1544,13 @@ final class NuvioSyncManager: ObservableObject {
                 try ensureStillSyncing(profileId: activeProfile.id)
                 if !librarySaved {
                     pullFailures += 1
-                    print("Nuvio library sync failed: the reconciled snapshot could not be saved.")
+                    print("Boomio library sync failed: the reconciled snapshot could not be saved.")
                 }
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
                 pullFailures += 1
-                print("Nuvio library sync failed: \(error.localizedDescription)")
+                print("Boomio library sync failed: \(error.localizedDescription)")
             }
 
             do {
@@ -1573,7 +1573,7 @@ final class NuvioSyncManager: ObservableObject {
                 throw CancellationError()
             } catch {
                 pullFailures += 1
-                print("Nuvio watched sync failed: \(error.localizedDescription)")
+                print("Boomio watched sync failed: \(error.localizedDescription)")
             }
 
             var didSaveWatchProgress = false
@@ -1648,7 +1648,7 @@ final class NuvioSyncManager: ObservableObject {
             } catch {
                 pullFailures += 1
                 Self.progressSyncDiagnostic = "failed: \(error.localizedDescription)"
-                print("Nuvio watch progress sync failed: \(error.localizedDescription)")
+                print("Boomio watch progress sync failed: \(error.localizedDescription)")
             }
             isApplyingRemote = false
             self.lastKnownSettingsSnapshot = self.snapshotSettingsKeys(for: activeProfile.id)
@@ -1732,11 +1732,11 @@ final class NuvioSyncManager: ObservableObject {
             // way an account that syncs nothing stops looking like an empty one.
             if authManager.sessionNeedsReauthentication {
                 Self.accountSyncDiagnostic = "session expired — sign in again"
-                print("Nuvio sync stopped: \(Self.reauthenticationMessage)")
+                print("Boomio sync stopped: \(Self.reauthenticationMessage)")
                 return
             }
             Self.accountSyncDiagnostic = "failed: \(error.localizedDescription)"
-            print("Nuvio sync failed: \(error.localizedDescription)")
+            print("Boomio sync failed: \(error.localizedDescription)")
             // Keep profile recovery inside this same login-owned task. Running
             // it as detached background work used to lower the gate here and
             // expose Guest while recovery was still actively pulling.
@@ -1752,12 +1752,12 @@ final class NuvioSyncManager: ObservableObject {
     /// Re-pulls account profiles a few times after the initial post-login pull
     /// came back empty. That first read often races a just-issued token and
     /// returns nothing even though the account has profiles; the who's-watching
-    /// screen would then be left showing the local "Nuvio Guest" placeholder
+    /// screen would then be left showing the local "Boomio Guest" placeholder
     /// until the user picks a profile (which triggers a fresh pull) and returns.
     /// This stays awaited by the post-login bootstrap so the placeholder cannot
     /// be selected while a recoverable account read is still in progress.
     private func backfillAccountProfiles() async -> Bool {
-        print("Nuvio sync starting profile backfill (post-login read yielded no profiles).")
+        print("Boomio sync starting profile backfill (post-login read yielded no profiles).")
         // Backoff between attempts (seconds); spans ~55s so a slow backend
         // that only makes a fresh account's profiles readable well after the
         // token is issued still gets caught.
@@ -1790,7 +1790,7 @@ final class NuvioSyncManager: ObservableObject {
                 continue
             }
             guard !remote.isEmpty else {
-                print("Nuvio sync profile backfill attempt still empty.")
+                print("Boomio sync profile backfill attempt still empty.")
                 continue
             }
             let merged = ProfileSyncIndexStore.localProfiles(
@@ -1802,14 +1802,14 @@ final class NuvioSyncManager: ObservableObject {
             observedActiveProfileId = profileViewModel.activeProfile?.id
             isApplyingRemote = false
             guard applied else {
-                print("Nuvio sync could not apply backfilled profiles; retrying.")
+                print("Boomio sync could not apply backfilled profiles; retrying.")
                 continue
             }
             profileSyncError = nil
-            print("Nuvio sync backfilled \(remote.count) profile(s) before profile selection.")
+            print("Boomio sync backfilled \(remote.count) profile(s) before profile selection.")
             return true
         }
-        print("Nuvio sync profile backfill gave up after \(delays.count) attempts.")
+        print("Boomio sync profile backfill gave up after \(delays.count) attempts.")
         return false
     }
 
@@ -1870,9 +1870,9 @@ final class NuvioSyncManager: ObservableObject {
                 if let data = try? JSONSerialization.data(withJSONObject: payload) {
                     CollectionsStore.applyRemote(data)
                 }
-                print("Nuvio sync pushed \(payload.count) collection(s).")
+                print("Boomio sync pushed \(payload.count) collection(s).")
             } catch {
-                print("Nuvio collections push failed: \(error.localizedDescription)")
+                print("Boomio collections push failed: \(error.localizedDescription)")
             }
         }
     }
@@ -1980,12 +1980,12 @@ final class NuvioSyncManager: ObservableObject {
                 pushedParts.append("\(ContinueWatchingStore.items().count) progress item(s)")
             }
             if !pushedParts.isEmpty {
-                print("Nuvio sync pushed \(pushedParts.joined(separator: "; ")).")
+                print("Boomio sync pushed \(pushedParts.joined(separator: "; ")).")
             }
         } catch is CancellationError {
             // Signed out mid-push: stop quietly, nothing was corrupted.
         } catch {
-            print("Nuvio sync push failed: \(error.localizedDescription)")
+            print("Boomio sync push failed: \(error.localizedDescription)")
         }
     }
 
@@ -2082,9 +2082,9 @@ final class NuvioSyncManager: ObservableObject {
                     remoteProfileId: remoteProfileId,
                     rows: payload
                 )
-                print("Nuvio sync pushed \(payload.count) add-on(s) after settings update.")
+                print("Boomio sync pushed \(payload.count) add-on(s) after settings update.")
             } catch {
-                print("Nuvio add-on push failed: \(error.localizedDescription)")
+                print("Boomio add-on push failed: \(error.localizedDescription)")
             }
         }
     }
@@ -2127,14 +2127,14 @@ final class NuvioSyncManager: ObservableObject {
         return "\(userId):\(remoteProfileId)"
     }
 
-    /// The locally seeded Guest that exists before account sync. "Nuvio User"
+    /// The locally seeded Guest that exists before account sync. "Boomio User"
     /// is also the legitimate default name returned by Nuvio accounts and must
     /// not be mistaken for an unsynced placeholder.
     private static func isPlaceholderProfile(_ profile: Profile) -> Bool {
         if profile.id == "guest" { return true }
         // Compatibility with an older fresh-install seed that used remote slot
         // 1 locally. Synced primary profiles are marked admin, so a real account
-        // profile named "Nuvio Guest" is not mistaken for the placeholder.
+        // profile named "Boomio Guest" is not mistaken for the placeholder.
         let name = profile.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return profile.id == "1" && !profile.isAdmin && profile.avatarId.isEmpty
             && name == "nuvio guest"
@@ -2277,7 +2277,7 @@ private enum ProfileSyncIndexStore {
                 bind(localId: localId, remoteId: remote.profileIndex)
                 return Profile(
                     id: localId,
-                    name: remote.name.isEmpty ? "Nuvio User" : remote.name,
+                    name: remote.name.isEmpty ? "Boomio User" : remote.name,
                     isPinProtected: remote.pinEnabled ?? preservedProfile?.isPinProtected ?? false,
                     isAdmin: remote.profileIndex == 1,
                     // The web app stores custom image links in avatar_url,
@@ -3046,7 +3046,7 @@ final class NuvioAPIClient {
             session: session,
             params: [
                 "p_installation_id": SyncClientIdentity.current(),
-                "p_client_name": "Nuvio tvOS",
+                "p_client_name": "Boomio tvOS",
                 "p_client_version": clientVersion,
                 "p_platform": platform,
                 "p_device_name": deviceName.isEmpty ? "Apple TV" : deviceName
@@ -3081,7 +3081,7 @@ final class NuvioAPIClient {
                 profile.withPinEnabled(locks[profile.profileIndex] ?? profile.pinEnabled)
             }
         } catch {
-            print("Nuvio profile lock sync failed; preserving the last known lock state: \(error.localizedDescription)")
+            print("Boomio profile lock sync failed; preserving the last known lock state: \(error.localizedDescription)")
             return rows.elements
         }
     }
@@ -3809,7 +3809,7 @@ final class NuvioAPIClient {
         }
         if let mobileError {
             if Self.isUnsupportedMobileSettingsBackend(mobileError) {
-                print("Nuvio mobile settings sync skipped: \(mobileError.localizedDescription)")
+                print("Boomio mobile settings sync skipped: \(mobileError.localizedDescription)")
                 return
             }
             throw mobileError

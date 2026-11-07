@@ -101,7 +101,7 @@ enum TraktWatchProgressSource: String, CaseIterable, Codable, Hashable, Sendable
         case .simkl: return "Simkl"
         case .mdblist: return "MDBList"
         case .wetrakr: return "WeTrakr"
-        case .nuvioSync: return "Nuvio Sync"
+        case .nuvioSync: return "Boomio Sync"
         }
     }
 }
@@ -119,7 +119,7 @@ enum TraktLibrarySourceMode: String, CaseIterable, Hashable, Sendable {
         case .simkl: return "Simkl"
         case .mdblist: return "MDBList"
         case .wetrakr: return "WeTrakr"
-        case .local: return "Nuvio Library"
+        case .local: return "Boomio Library"
         }
     }
 }

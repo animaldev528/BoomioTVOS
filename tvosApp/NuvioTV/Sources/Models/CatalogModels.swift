@@ -6592,7 +6592,7 @@ enum LargePayloadStore {
                 continue
             }
         }
-        print("Nuvio large payload write failed for \(key)")
+        print("Boomio large payload write failed for \(key)")
         return false
     }
 
@@ -12057,14 +12057,14 @@ enum WatchedStore {
             } catch {
                 let primaryReason = primaryError.map(diagnosticText(for:)) ?? "unknown error"
                 persistenceDiagnostic = "save failed: \(primaryReason); \(fallbackStorageLabel): \(diagnosticText(for: error))"
-                print("Nuvio watched storage write failed: \(persistenceDiagnostic)")
+                print("Boomio watched storage write failed: \(persistenceDiagnostic)")
                 return false
             }
         }
 
         let reason = primaryError.map(diagnosticText(for:)) ?? "unknown error"
         persistenceDiagnostic = "save failed: \(reason); \(fallbackStorageLabel) unavailable"
-        print("Nuvio watched storage write failed: \(persistenceDiagnostic)")
+        print("Boomio watched storage write failed: \(persistenceDiagnostic)")
         return false
     }
 

@@ -1459,7 +1459,7 @@ private struct WatchPartyLobbyInvitation: View {
                         .accessibilityLabel("QR invitation for Watch Party room \(code)")
                 }
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Scan with a compatible Nuvio app")
+                    Text("Scan with a compatible Boomio app")
                         .font(.system(size: 22, weight: .semibold))
                     Text(WatchPartyCode.formatted(code))
                         .font(.system(size: 37, weight: .bold, design: .monospaced))

@@ -4416,7 +4416,7 @@ private struct TVMainTabView: View {
     @AppStorage(SettingsKey.showWatchPartyTab) private var showWatchPartyTab = true
     @AppStorage(SettingsKey.searchStyle) private var searchStyle = "Netflix"
     @AppStorage("nuvio.keyboard.detectedLayout") private var detectedKeyboardMode: TVOSKeyboardLayoutMode = .linear
-    @AppStorage(SettingsKey.profileName) private var settingsProfileName = "Nuvio User"
+    @AppStorage(SettingsKey.profileName) private var settingsProfileName = "Boomio User"
     @State private var selectedSettingsCategory: SettingsCategory = .account
     @State private var collectionDestinations: [CollectionHomeDestination] = []
     @State private var directCollectionDestinations: [CollectionHomeDestination] = []
@@ -4433,7 +4433,7 @@ private struct TVMainTabView: View {
     /// Name shown on the profile tab, mirroring the sidebar header's
     /// display-name logic.
     private var profileTabTitle: String {
-        guard let displayedProfile else { return "Nuvio Guest" }
+        guard let displayedProfile else { return "Boomio Guest" }
         return ProfileDisplayName.resolve(profile: displayedProfile, settingsName: settingsProfileName)
     }
 
@@ -4844,7 +4844,7 @@ private struct TVSidebarProfileHeader: View {
     let action: () -> Void
 
     @FocusState private var isFocused: Bool
-    @AppStorage(SettingsKey.profileName) private var settingsProfileName = "Nuvio User"
+    @AppStorage(SettingsKey.profileName) private var settingsProfileName = "Boomio User"
 
     var body: some View {
         Button(action: action) {
@@ -4922,7 +4922,7 @@ enum ProfileDisplayName {
             return profileName
         }
         let trimmed = settingsName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Nuvio User" : trimmed
+        return trimmed.isEmpty ? "Boomio User" : trimmed
     }
 }
 
@@ -5040,7 +5040,7 @@ struct TVReauthBannerView: View {
 
                 Text(L10n.string(
                     "reauth_banner_subtitle",
-                    fallback: "Your Nuvio session expired. Sign in to resume syncing your library, add-ons, and watch progress."
+                    fallback: "Your Boomio session expired. Sign in to resume syncing your library, add-ons, and watch progress."
                 ))
                 .font(.system(size: 17, weight: .medium))
                 .foregroundColor(.white.opacity(0.75))

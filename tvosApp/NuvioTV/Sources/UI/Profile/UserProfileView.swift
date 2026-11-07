@@ -72,7 +72,7 @@ public struct UserProfileView: View {
 
                             Text(L10n.string(
                                 "profile_account_sync_compatibility_message",
-                                fallback: "Update all Nuvio clients to their latest versions, then select Retry. Older clients cannot sync account data."
+                                fallback: "Update all Boomio clients to their latest versions, then select Retry. Older clients cannot sync account data."
                             ))
                                 .font(.appFont(size: 16, weight: .regular))
                                 .foregroundColor(.white.opacity(0.72))

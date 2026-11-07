@@ -110,14 +110,17 @@ struct LoginView: View {
 
     private var leftPane: some View {
         VStack(alignment: .leading, spacing: 22) {
-            Image("BrandWordmark")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 300)
+            // Boomio wordmark drawn as text — the bundled "BrandWordmark"
+            // asset is the upstream Nuvio logo.
+            Text("boomio")
+                .font(.system(size: 76, weight: .bold, design: .rounded))
+                .tracking(-2)
+                .foregroundColor(.white)
+                .frame(width: 300, alignment: .leading)
 
             Text(auth.isAuthenticated
                  ? L10n.string("auth_signed_in", fallback: "You're signed in")
-                 : L10n.string("auth_sign_in_nuvio", fallback: "Sign in to Nuvio"))
+                 : L10n.string("auth_sign_in_nuvio", fallback: "Sign in to Boomio"))
                 .font(.system(size: 40, weight: .bold))
                 .foregroundColor(.white)
 
@@ -171,7 +174,9 @@ struct LoginView: View {
                 statusPill(error, isError: true)
             }
 
-            if !auth.isBackendConfigured {
+            // Only when the server picker is closed: inside it this notice sat
+            // directly under the trust toggle and read as a disabled Connect.
+            if !auth.isBackendConfigured && !showingServerOptions {
                 statusPill(L10n.string("auth_no_account_server", fallback: "No account server is configured."), isError: false)
             }
 
@@ -442,7 +447,7 @@ struct LoginView: View {
             LoginLinkButton(
                 title: isSignUp
                     ? L10n.string("auth_already_have_account", fallback: "Already have an account? Sign in")
-                    : L10n.string("auth_new_to_nuvio", fallback: "New to Nuvio? Create an account")
+                    : L10n.string("auth_new_to_nuvio", fallback: "New to Boomio? Create an account")
             ) {
                 isSignUp.toggle()
                 auth.errorMessage = nil
@@ -729,6 +734,18 @@ extension View {
                     ? Glass.regular.tint(.white.opacity(0.92))
                     : prominent ? Glass.regular.tint(.white.opacity(0.75)) : Glass.regular,
                 in: Capsule()
+            )
+            // The white tint above does not actually lighten the glass on
+            // tvOS 26.6 — the capsule renders dark. Both `highlighted` and
+            // `prominent` pair with a black label, so the primary button
+            // (Connect) was black-on-black and every focused control went
+            // invisible. Paint those two states under the glass instead.
+            .background(
+                Capsule().fill(
+                    highlighted
+                        ? Color.white.opacity(0.96)
+                        : prominent ? Color.white.opacity(0.92) : Color.clear
+                )
             )
         } else {
             background(

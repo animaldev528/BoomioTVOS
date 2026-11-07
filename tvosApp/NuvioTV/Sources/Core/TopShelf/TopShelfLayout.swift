@@ -44,7 +44,7 @@ public struct TopShelfConfiguration: Codable, Equatable, Sendable {
         public var label: String {
             switch self {
             case .active: return "Active Library"
-            case .local: return "Nuvio Library"
+            case .local: return "Boomio Library"
             case .simkl: return "Simkl"
             case .trakt: return "Trakt"
             case .mdblist: return "MDBList"

@@ -1616,7 +1616,7 @@ enum SimklHistoryTransferSource: String, CaseIterable {
 
     var label: String {
         switch self {
-        case .nuvioSync: return "Nuvio Sync"
+        case .nuvioSync: return "Boomio Sync"
         case .trakt: return "Trakt"
         }
     }
@@ -1897,7 +1897,7 @@ enum SimklLibraryTransferSource: String, CaseIterable {
 
     var label: String {
         switch self {
-        case .nuvioLibrary: return "Nuvio Library"
+        case .nuvioLibrary: return "Boomio Library"
         case .trakt: return "Trakt"
         }
     }
@@ -2398,7 +2398,7 @@ enum SimklProgressTransferSource: String, CaseIterable {
 
     var label: String {
         switch self {
-        case .nuvioSync: return "Nuvio Sync"
+        case .nuvioSync: return "Boomio Sync"
         case .trakt: return "Trakt"
         }
     }

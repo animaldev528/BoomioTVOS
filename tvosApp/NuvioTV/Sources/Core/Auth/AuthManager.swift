@@ -229,7 +229,7 @@ final class AuthManager: ObservableObject {
                 if let self, self.isCurrent(operation),
                    let authError = error as? AuthError, Self.isCredentialRejection(authError) {
                     self.sessionNeedsReauthentication = true
-                    print("Nuvio session cannot be renewed (\(authError.message)). Sign in again to resume sync.")
+                    print("Boomio session cannot be renewed (\(authError.message)). Sign in again to resume sync.")
                 }
                 return nil
             }
@@ -264,7 +264,7 @@ final class AuthManager: ObservableObject {
             // Do not strand a successful login on Home just because secure
             // persistence is unavailable in this simulator/install. The live
             // in-memory session remains valid for all sync requests.
-            print("Nuvio session is active, but secure persistence failed.")
+            print("Boomio session is active, but secure persistence failed.")
         }
         authState = .fullAccount(userId: session.userId, email: session.email ?? "")
     }
@@ -449,13 +449,24 @@ final class AuthManager: ObservableObject {
 
         qrStartTask = Task { [weak self, service] in
             do {
-                let anon = try await service.signInAnonymously()
+                // Boomio: a self-hosted backend normally has anonymous
+                // sign-ins turned off — boomio.duckdns.org answers
+                // /auth/v1/signup with 404, which killed the QR flow before it
+                // started. The TV-login RPCs are authorized by the publishable
+                // key alone (the Android client sends no bearer at all), so
+                // fall back to the key instead of dead-ending here.
+                let anonToken: String
+                do {
+                    anonToken = try await service.signInAnonymously().accessToken
+                } catch {
+                    anonToken = AuthConfig.apiKey
+                }
                 guard let self,
                       self.isCurrent(operation),
                       self.isCurrent(qrOperation) else { return }
-                self.qrAnonAccessToken = anon.accessToken
+                self.qrAnonAccessToken = anonToken
                 let start = try await service.startTvLoginSession(
-                    accessToken: anon.accessToken,
+                    accessToken: anonToken,
                     deviceNonce: nonce,
                     deviceName: Self.deviceName
                 )
