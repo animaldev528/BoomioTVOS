@@ -383,8 +383,24 @@ final class AuthManager: ObservableObject {
     }
 
     func signUp(email: String, password: String) async {
+        // A self-hosted backend runs GoTrue with sign-ups disabled
+        // (GOTRUE_DISABLE_SIGNUP=true), so creating an account here always
+        // fails. GoTrue answers 422 "Signups not allowed for this instance",
+        // which reads like an app fault; say what actually works instead.
+        var failure: Error?
         await runEmail { service in
-            try await service.signUpWithEmail(email: email, password: password)
+            do {
+                return try await service.signUpWithEmail(email: email, password: password)
+            } catch {
+                failure = error
+                throw error
+            }
+        }
+        if let authError = failure as? AuthError,
+           [403, 404, 422].contains(authError.statusCode ?? 0) {
+            errorMessage = "This server does not allow creating accounts. "
+                + "Sign in with an existing account — the household admin can "
+                + "add you from the Boomio dashboard."
         }
     }
 
