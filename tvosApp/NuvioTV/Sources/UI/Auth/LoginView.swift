@@ -312,11 +312,20 @@ struct LoginView: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     ForEach(discovery.boxes) { box in
-                        LoginButton(title: box.name, systemImage: "appletv") {
-                            backendInput = box.backendURL
-                            trustServer = false
-                            auth.clearDiscoveredServer()
-                            Task { await auth.discoverCustomServer(input: box.backendURL) }
+                        VStack(spacing: 4) {
+                            LoginButton(title: box.name, systemImage: "appletv") {
+                                backendInput = box.backendURL
+                                trustServer = false
+                                auth.clearDiscoveredServer()
+                                Task { await auth.discoverCustomServer(input: box.backendURL) }
+                            }
+                            // The advert name is often the same on every box
+                            // ("Boomio overlay"), so show the address it
+                            // resolved to — that is what tells two boxes
+                            // apart, and what the user would type by hand.
+                            Text(box.detail)
+                                .font(.system(size: 14, design: .monospaced))
+                                .foregroundColor(.white.opacity(0.45))
                         }
                     }
                 }
