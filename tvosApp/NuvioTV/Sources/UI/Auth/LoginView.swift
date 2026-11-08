@@ -351,13 +351,34 @@ struct LoginView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else if discovery.isSearching {
-                HStack(spacing: 12) {
-                    ProgressView()
-                    Text(L10n.string("auth_searching_boxes", fallback: "Looking for a Boomio box on your network…"))
-                        .font(.system(size: 17))
-                        .foregroundColor(.white.opacity(0.7))
+                VStack(spacing: 12) {
+                    HStack(spacing: 12) {
+                        ProgressView()
+                        Text(L10n.string("auth_searching_boxes", fallback: "Looking for a Boomio box on your network…"))
+                            .font(.system(size: 17))
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    // A search that never finishes is indistinguishable from a
+                    // search that finds nothing, so let the user re-arm it
+                    // without leaving the screen — that forces a fresh browse.
+                    LoginButton(
+                        title: L10n.string("auth_search_again", fallback: "Search Again"),
+                        systemImage: "arrow.clockwise"
+                    ) {
+                        discovery.restart()
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            // Live state of both browsers; the only way to see what tvOS did
+            // with the browse, since it has no local-network permission.
+            if !discovery.diagnostics.isEmpty {
+                Text(discovery.diagnostics)
+                    .font(.system(size: 13, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.35))
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }

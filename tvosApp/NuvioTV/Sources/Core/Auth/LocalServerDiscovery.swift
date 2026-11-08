@@ -17,16 +17,28 @@
 //  fed through `ServerDiscoveryPolicy` (/.well-known/nuvio) exactly like a
 //  typed URL, and the user still has to confirm before it is saved.
 //
+//  Two browsers run side by side on purpose. `NWBrowser` is the modern API,
+//  but on tvOS it can sit in `.setup`/`.ready` and never report anything
+//  while the wire shows no query at all — and tvOS has no local-network
+//  permission (Apple's TN3179 implements it on iOS/iPadOS/visionOS/macOS
+//  only), so there is no prompt to blame and no error to show. The older
+//  `NetServiceBrowser` rides a different code path onto mDNSResponder; if
+//  one finds the box and the other does not, that tells us which layer is
+//  broken. `diagnostics` carries what both of them are doing, so the login
+//  screen can say it instead of spinning forever.
+//
 
 import Combine
 import Foundation
 import Network
 
 /// Boomio: publishes `@Published` state that is only ever mutated on the main
-/// actor (the browser runs on `.main` and every handler hops with
+/// actor (both browsers run on the main run loop and every handler hops with
 /// `Task { @MainActor in … }`), so the class itself is not actor-isolated and
 /// can be created from a SwiftUI `@StateObject` initialiser.
-final class LocalServerDiscovery: ObservableObject {
+///
+/// `NSObject` because `NetServiceBrowser` needs an Objective-C delegate.
+final class LocalServerDiscovery: NSObject, ObservableObject {
     struct Box: Identifiable, Equatable {
         /// Bonjour instance name, or the backend URL when the name is absent.
         let id: String
@@ -44,16 +56,70 @@ final class LocalServerDiscovery: ObservableObject {
 
     @Published private(set) var boxes: [Box] = []
     @Published private(set) var isSearching = false
-    /// Set when the browser itself fails (usually denied local-network
-    /// access). The UI shows it instead of silently listing nothing.
+    /// Set when a browser itself fails. The UI shows it instead of silently
+    /// listing nothing.
     @Published private(set) var failureMessage: String?
+    /// One line of live state for both browsers, e.g.
+    /// `nw ready/0 · ns found 1/1 · 14:22:03`. Nothing else on tvOS can show
+    /// whether the browse ever reached the mDNS daemon.
+    @Published private(set) var diagnostics: String = ""
 
     private var browser: NWBrowser?
+    private var netBrowser: NetServiceBrowser?
+    /// Retains what `NetServiceBrowser` hands us; a service that is released
+    /// before its delegate call returns is simply gone.
+    private var netServices: [String: NetService] = [:]
+
+    private var nwBoxes: [String: Box] = [:]
+    private var nsBoxes: [String: Box] = [:]
+
+    private var nwState = "idle"
+    private var nsState = "idle"
+    private var nwHits = 0
+
+    // MARK: - Lifecycle
 
     func start() {
-        guard browser == nil else { return }
+        guard browser == nil, netBrowser == nil else { return }
         failureMessage = nil
+        nwBoxes.removeAll()
+        nsBoxes.removeAll()
+        netServices.removeAll()
+        nwState = "starting"
+        nsState = "starting"
+        nwHits = 0
+        publishDiagnostics()
 
+        startNetworkBrowser()
+        startNetServiceBrowser()
+        isSearching = true
+    }
+
+    func stop() {
+        browser?.cancel()
+        browser = nil
+        netBrowser?.stop()
+        netBrowser = nil
+        netServices.removeAll()
+        nwBoxes.removeAll()
+        nsBoxes.removeAll()
+        isSearching = false
+        nwState = "stopped"
+        nsState = "stopped"
+        nwHits = 0
+        publishDiagnostics()
+    }
+
+    func restart() {
+        stop()
+        boxes = []
+        failureMessage = nil
+        start()
+    }
+
+    // MARK: - Network.framework browser
+
+    private func startNetworkBrowser() {
         let parameters = NWParameters.udp
         parameters.includePeerToPeer = false
 
@@ -61,25 +127,25 @@ final class LocalServerDiscovery: ObservableObject {
         browser.stateUpdateHandler = { [weak self] state in
             Task { @MainActor in
                 guard let self else { return }
+                self.nwState = Self.describe(state)
                 switch state {
                 case .ready:
                     self.isSearching = true
                     self.failureMessage = nil
                 case .waiting(let error):
-                    // A denied local-network permission does not fail the
-                    // browser — it parks in .waiting with DNS policy-denied
-                    // (-65555) and never produces a result. Surface it, or
-                    // the screen says "Searching…" forever with no clue.
+                    // Kept in `.waiting` rather than failing, and it never
+                    // produces a result. Surface it instead of spinning.
                     self.isSearching = true
-                    self.failureMessage = Self.message(for: error)
+                    self.failureMessage = Self.message(for: error, source: "Network.framework")
                 case .failed(let error):
                     self.isSearching = false
-                    self.failureMessage = Self.message(for: error)
+                    self.failureMessage = Self.message(for: error, source: "Network.framework")
                 case .cancelled:
                     self.isSearching = false
                 default:
                     break
                 }
+                self.publishDiagnostics()
             }
         }
         browser.browseResultsChangedHandler = { [weak self] results, _ in
@@ -92,48 +158,95 @@ final class LocalServerDiscovery: ObservableObject {
         isSearching = true
     }
 
-    func stop() {
-        browser?.cancel()
-        browser = nil
-        isSearching = false
-    }
-
-    func restart() {
-        stop()
-        boxes = []
-        failureMessage = nil
-        start()
-    }
-
     private func apply(_ results: Set<NWBrowser.Result>) {
-        var seen = Set<String>()
-        var next: [Box] = []
+        var next: [String: Box] = [:]
         for result in results {
-            guard let box = Self.box(from: result), seen.insert(box.backendURL).inserted else { continue }
-            next.append(box)
+            guard let box = Self.box(from: result), next[box.id] == nil else { continue }
+            next[box.id] = box
         }
-        next.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        boxes = next
+        nwBoxes = next
+        nwHits = next.count
+        recomputeBoxes()
+        publishDiagnostics()
     }
 
-    private static func message(for error: NWError) -> String {
-        // kDNSServiceErr_PolicyDenied: the app is not allowed to use the
-        // local network. tvOS never asks twice, so the way back is to delete
-        // and reinstall the app and choose Allow on the prompt.
-        if case let .dns(code) = error, code == -65555 {
-            return "Apple TV is blocking local-network access for this app. "
-                + "Delete the app, reinstall it, and choose Allow when it asks "
-                + "to find devices on your network."
+    // MARK: - NetServiceBrowser (independent second path)
+
+    private func startNetServiceBrowser() {
+        let browser = NetServiceBrowser()
+        browser.delegate = self
+        browser.searchForServices(ofType: Self.serviceType + ".", inDomain: "")
+        self.netBrowser = browser
+    }
+
+    // MARK: - Merged results
+
+    private func recomputeBoxes() {
+        // Network.framework results win when both paths find the same box:
+        // they carry the endpoint the system resolved.
+        var byURL: [String: Box] = [:]
+        for box in nwBoxes.values where byURL[box.backendURL] == nil {
+            byURL[box.backendURL] = box
         }
-        return String(describing: error)
+        for box in nsBoxes.values where byURL[box.backendURL] == nil {
+            byURL[box.backendURL] = box
+        }
+        boxes = byURL.values.sorted {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+    }
+
+    private func publishDiagnostics() {
+        diagnostics = "nw \(nwState)/\(nwHits) · ns \(nsState) · \(Self.clock.string(from: Date()))"
+    }
+
+    private static let clock: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm:ss"
+        return f
+    }()
+
+    // MARK: - Advert parsing
+
+    private static func describe(_ state: NWBrowser.State) -> String {
+        switch state {
+        case .setup:
+            return "setup"
+        case .ready:
+            return "ready"
+        case .waiting(let error):
+            return "waiting \(error)"
+        case .failed(let error):
+            return "failed \(error)"
+        case .cancelled:
+            return "cancelled"
+        @unknown default:
+            return "unknown"
+        }
+    }
+
+    private static func message(for error: NWError, source: String) -> String {
+        if case let .dns(code) = error, code == -65555 {
+            return "\(source): local-network access denied (DNS -65555)."
+        }
+        return "\(source): \(error)"
     }
 
     private static func box(from result: NWBrowser.Result) -> Box? {
         guard case let .bonjour(record) = result.metadata else { return nil }
+        var values: [String: String] = [:]
+        for key in ["svc", "lan", "pk"] {
+            if let value = txt(record, key) { values[key] = value }
+        }
+        return box(instance: instanceName(result), txt: values)
+    }
 
-        let systemName = txt(record, "svc")?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let lan = txt(record, "lan")?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let instance = instanceName(result)
+    /// Builds a box from the advert's TXT values. Both browsers land here, so
+    /// the URL the login screen offers does not depend on which one answered.
+    private static func box(instance: String?, txt values: [String: String]) -> Box? {
+        let systemName = values["svc"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lan = values["lan"]?.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Prefer the FQDN: the certificate is issued for it, and a bare LAN
         // address will usually fail TLS verification.
@@ -152,11 +265,11 @@ final class LocalServerDiscovery: ObservableObject {
 
         let label = (instance?.isEmpty == false ? instance : nil) ?? host
         return Box(
-            id: instance?.isEmpty == false ? instance! : backendURL,
+            id: label,
             name: label,
             backendURL: backendURL,
             lanAddress: (lan?.isEmpty == false) ? lan : nil,
-            serverPublicKey: txt(record, "pk")
+            serverPublicKey: values["pk"]
         )
     }
 
@@ -176,6 +289,80 @@ final class LocalServerDiscovery: ObservableObject {
             return nil
         @unknown default:
             return nil
+        }
+    }
+
+    /// DNS TXT data as returned by `NetService.txtRecordData()`: a sequence of
+    /// length-prefixed `key=value` strings.
+    private static func parseTXT(_ data: Data?) -> [String: String] {
+        guard let data else { return [:] }
+        let bytes = [UInt8](data)
+        var values: [String: String] = [:]
+        var i = 0
+        while i < bytes.count {
+            let length = Int(bytes[i])
+            i += 1
+            guard length > 0, i + length <= bytes.count else { break }
+            let chunk = Data(bytes[i..<(i + length)])
+            i += length
+            guard let entry = String(data: chunk, encoding: .utf8) else { continue }
+            if let separator = entry.firstIndex(of: "=") {
+                let key = String(entry[entry.startIndex..<separator])
+                let value = String(entry[entry.index(after: separator)...])
+                values[key] = value
+            }
+        }
+        return values
+    }
+}
+
+// MARK: - NetServiceBrowserDelegate
+
+extension LocalServerDiscovery: NetServiceBrowserDelegate {
+    func netServiceBrowserWillSearch(_ browser: NetServiceBrowser) {
+        Task { @MainActor in
+            self.nsState = "searching"
+            self.publishDiagnostics()
+        }
+    }
+
+    func netServiceBrowserDidStopSearch(_ browser: NetServiceBrowser) {
+        Task { @MainActor in
+            self.nsState = "stopped"
+            self.publishDiagnostics()
+        }
+    }
+
+    func netServiceBrowser(_ browser: NetServiceBrowser, didNotSearch errorDict: [String: NSNumber]) {
+        Task { @MainActor in
+            let code = errorDict[NetService.errorCode]?.intValue ?? 0
+            self.nsState = "error \(code)"
+            self.publishDiagnostics()
+        }
+    }
+
+    func netServiceBrowser(_ browser: NetServiceBrowser, didFind service: NetService, moreComing: Bool) {
+        let name = service.name
+        let values = Self.parseTXT(service.txtRecordData())
+        Task { @MainActor in
+            self.netServices[name] = service
+            if let box = Self.box(instance: name, txt: values) {
+                self.nsBoxes[box.id] = box
+            }
+            self.nsState = "found \(self.nsBoxes.count)"
+            self.recomputeBoxes()
+            self.publishDiagnostics()
+        }
+    }
+
+    func netServiceBrowser(_ browser: NetServiceBrowser, didRemove service: NetService, moreComing: Bool) {
+        let name = service.name
+        Task { @MainActor in
+            self.netServices[name] = nil
+            self.nsBoxes.removeValue(forKey: name)
+            self.nsState = "found \(self.nsBoxes.count)"
+            self.recomputeBoxes()
+            self.publishDiagnostics()
         }
     }
 }
