@@ -10816,10 +10816,34 @@ private struct AdvancedSettingsView: View {
     @State private var testHistoryStatus = ContinueWatchingTestData.status
     @State private var isClearingCache = false
     @State private var clearedCacheStatus: String?
+    @State private var showingBoomioSetup = false
     @AppStorage(SettingsKey.focusHighlighter) private var focusHighlighter = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
+            // Boomio: first, because until this TV has been paired its
+            // certificate is not registered and the box's media plane treats
+            // it as an unkeyed caller.
+            SettingsGroup(
+                title: L10n.string("boomio_services_title", fallback: "Boomio Services"),
+                subtitle: L10n.string(
+                    "boomio_services_subtitle",
+                    fallback: "Pairing, client certificate and tunnel enrolment for this Apple TV"
+                )
+            ) {
+                SettingsActionRow(
+                    title: L10n.string("boomio_services_setup", fallback: "Set Up This Apple TV"),
+                    subtitle: L10n.string(
+                        "boomio_services_setup_detail",
+                        fallback: "Find the box on your network, approve this TV on your phone, then register its certificate"
+                    ),
+                    value: L10n.string("action_open", fallback: "Open"),
+                    accentColor: accentColor,
+                    action: { showingBoomioSetup = true }
+                )
+                .settingsEntryAnchor()
+            }
+
             SettingsGroup(
                 title: L10n.string("advanced_section_performance", fallback: "Navigation"),
                 subtitle: L10n.string(
@@ -10991,6 +11015,9 @@ private struct AdvancedSettingsView: View {
         #if os(tvOS)
         .fullScreenCover(isPresented: $showingPlaybackHistory) {
             PlaybackDiagnosticHistoryView(accentColor: accentColor)
+        }
+        .fullScreenCover(isPresented: $showingBoomioSetup) {
+            BoomioOnboardingView(onClose: { showingBoomioSetup = false })
         }
         #endif
     }
