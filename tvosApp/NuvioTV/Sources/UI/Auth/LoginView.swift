@@ -380,6 +380,13 @@ struct LoginView: View {
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            if !discovery.detail.isEmpty {
+                Text(discovery.detail)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.25))
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 

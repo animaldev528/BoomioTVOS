@@ -63,6 +63,11 @@ final class LocalServerDiscovery: NSObject, ObservableObject {
     /// `nw ready/0 · ns found 1/1 · 14:22:03`. Nothing else on tvOS can show
     /// whether the browse ever reached the mDNS daemon.
     @Published private(set) var diagnostics: String = ""
+    /// Second line: what the first result from each browser actually looked
+    /// like (endpoint, whether it carried a TXT, and the TXT's `svc`). The
+    /// search can fail in three places — nothing delivered, delivered with no
+    /// TXT, delivered but unusable — and only this tells them apart.
+    @Published private(set) var detail: String = ""
 
     private var browser: NWBrowser?
     private var netBrowser: NetServiceBrowser?
@@ -76,6 +81,10 @@ final class LocalServerDiscovery: NSObject, ObservableObject {
     private var nwState = "idle"
     private var nsState = "idle"
     private var nwHits = 0
+    /// Results handed over by NWBrowser, before any filtering by `box(from:)`.
+    private var nwRaw = 0
+    private var nwDetail = ""
+    private var nsDetail = ""
 
     // MARK: - Lifecycle
 
@@ -166,6 +175,8 @@ final class LocalServerDiscovery: NSObject, ObservableObject {
         }
         nwBoxes = next
         nwHits = next.count
+        nwRaw = results.count
+        nwDetail = results.first.map(Self.describe) ?? "none"
         recomputeBoxes()
         publishDiagnostics()
     }
@@ -197,7 +208,9 @@ final class LocalServerDiscovery: NSObject, ObservableObject {
     }
 
     private func publishDiagnostics() {
-        diagnostics = "nw \(nwState)/\(nwHits) · ns \(nsState) · \(Self.clock.string(from: Date()))"
+        diagnostics = "nw \(nwState) raw\(nwRaw) box\(nwHits) · ns \(nsState) · \(Self.clock.string(from: Date()))"
+        let lines = [nwDetail, nsDetail].filter { !$0.isEmpty }
+        detail = lines.joined(separator: "\n")
     }
 
     private static let clock: DateFormatter = {
@@ -278,6 +291,30 @@ final class LocalServerDiscovery: NSObject, ObservableObject {
         return nil
     }
 
+    /// One-line account of a raw browse result: the endpoint it names and
+    /// whether it carried a TXT record (and what `svc`/`lan` it held). A result
+    /// with no TXT cannot be turned into a box, and this is the only way to see
+    /// that from the TV.
+    private static func describe(_ result: NWBrowser.Result) -> String {
+        var parts: [String] = []
+        if case let .service(name, type, domain, _) = result.endpoint {
+            parts.append("svc=\(name) \(type) \(domain)")
+        } else {
+            parts.append("ep=\(result.endpoint)")
+        }
+        switch result.metadata {
+        case .bonjour(let record):
+            let svc = txt(record, "svc") ?? "<nil>"
+            let lan = txt(record, "lan") ?? "<nil>"
+            parts.append("txt svc=\(svc) lan=\(lan)")
+        case .none:
+            parts.append("txt NONE")
+        @unknown default:
+            parts.append("txt ?")
+        }
+        return parts.joined(separator: " · ")
+    }
+
     private static func txt(_ record: NWTXTRecord, _ key: String) -> String? {
         guard let entry = record.getEntry(for: key) else { return nil }
         switch entry {
@@ -318,7 +355,7 @@ final class LocalServerDiscovery: NSObject, ObservableObject {
 
 // MARK: - NetServiceBrowserDelegate
 
-extension LocalServerDiscovery: NetServiceBrowserDelegate {
+extension LocalServerDiscovery: NetServiceBrowserDelegate, NetServiceDelegate {
     func netServiceBrowserWillSearch(_ browser: NetServiceBrowser) {
         Task { @MainActor in
             self.nsState = "searching"
@@ -343,14 +380,55 @@ extension LocalServerDiscovery: NetServiceBrowserDelegate {
 
     func netServiceBrowser(_ browser: NetServiceBrowser, didFind service: NetService, moreComing: Bool) {
         let name = service.name
-        let values = Self.parseTXT(service.txtRecordData())
+        let txtData = service.txtRecordData()
+        let values = Self.parseTXT(txtData)
+        let txtBytes = txtData.map { "\($0.count)B" } ?? "nil"
+        // Retained here, synchronously: a NetService released before its
+        // resolve finishes simply stops, and the delegate was weak.
+        netServices[name] = service
         Task { @MainActor in
-            self.netServices[name] = service
             if let box = Self.box(instance: name, txt: values) {
                 self.nsBoxes[box.id] = box
             }
+            self.nsDetail = "ns \"\(name)\" txt=\(txtBytes) keys=\(values.count)"
             self.nsState = "found \(self.nsBoxes.count)"
             self.recomputeBoxes()
+            self.publishDiagnostics()
+        }
+        // A browse result carries the PTR's instance name only. The TXT is a
+        // separate record and mDNSResponder will not fetch it on our behalf:
+        // the wire shows the TV asking for the PTR and nothing else, so
+        // `txtRecordData()` here is nil and no box can be built. Resolving by
+        // name asks for SRV+TXT explicitly, which is the only way to get `svc`.
+        service.delegate = self
+        service.resolve(withTimeout: 5)
+    }
+
+    func netServiceDidResolveAddress(_ sender: NetService) {
+        let name = sender.name
+        let txtData = sender.txtRecordData()
+        let values = Self.parseTXT(txtData)
+        let txtBytes = txtData.map { "\($0.count)B" } ?? "nil"
+        let host = sender.hostName ?? "no-host"
+        netServices[name] = sender
+        Task { @MainActor in
+            if let box = Self.box(instance: name, txt: values) {
+                self.nsBoxes[box.id] = box
+                self.nsDetail = "ns \"\(name)\" resolved \(host) txt=\(txtBytes)"
+            } else {
+                self.nsDetail = "ns \"\(name)\" resolved \(host), no svc/lan txt=\(txtBytes)"
+            }
+            self.nsState = "found \(self.nsBoxes.count)"
+            self.recomputeBoxes()
+            self.publishDiagnostics()
+        }
+    }
+
+    func netService(_ sender: NetService, didNotResolve errorDict: [String: NSNumber]) {
+        let name = sender.name
+        let code = errorDict[NetService.errorCode]?.intValue ?? 0
+        Task { @MainActor in
+            self.nsDetail = "ns \"\(name)\" didNotResolve \(code)"
             self.publishDiagnostics()
         }
     }
