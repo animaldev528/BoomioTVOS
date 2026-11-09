@@ -34,6 +34,7 @@ struct LoginView: View {
     @State private var showingServerOptions = false
     @State private var backendInput = ""
     @State private var trustServer = false
+    @State private var showingBoomioSetup = false
     @StateObject private var discovery = LocalServerDiscovery()
 
     var body: some View {
@@ -48,6 +49,14 @@ struct LoginView: View {
             }
             .padding(.horizontal, 120)
             .padding(.vertical, 80)
+
+            // Overlay rather than a cover: setup returns to exactly this
+            // screen, and the login card keeps its state underneath.
+            if showingBoomioSetup {
+                BoomioOnboardingView(onClose: { showingBoomioSetup = false })
+                    .transition(.opacity)
+                    .zIndex(3)
+            }
         }
         .onAppear {
             if auth.isAuthenticated {
@@ -159,6 +168,14 @@ struct LoginView: View {
             }
 
             serverOptions
+
+            // Independent of signing in: pairing is what registers this TV's
+            // certificate with the box, and it works before any account
+            // exists here.
+            LoginLinkButton(title: L10n.string("boomio_setup_entry", fallback: "Set Up This Apple TV")) {
+                discovery.stop()
+                showingBoomioSetup = true
+            }
 
             if auth.isAuthenticated {
                 connectedContent
@@ -327,6 +344,14 @@ struct LoginView: View {
                                 .font(.system(size: 14, design: .monospaced))
                                 .foregroundColor(.white.opacity(0.45))
                         }
+                    }
+                    // Two boxes advertising means the user must choose; this
+                    // screen must not narrow it down to the first answer.
+                    if let conflict = discovery.conflictMessage {
+                        Text(conflict)
+                            .font(.system(size: 15))
+                            .foregroundColor(.orange)
+                            .multilineTextAlignment(.center)
                     }
                 }
             } else if let failure = discovery.failureMessage {

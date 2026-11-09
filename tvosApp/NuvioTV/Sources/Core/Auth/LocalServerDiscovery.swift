@@ -4,47 +4,38 @@
 //
 //  Boomio: finds Boomio boxes on the local network. The box publishes
 //  `_boomio-overlay._udp` with avahi-publish-service
-//  (overlay/systemd/boomio-overlay-mdns.service):
+//  (overlay/systemd/boomio-overlay-mdns.service); the tuple and its rules live
+//  in `OverlayAdvert`.
 //
-//    TXT  v=2 svc=<fqdn> lan=<address> wan=<address> port=… ppord=…
-//         pk=<server wg pubkey> ppk=<provisioning pubkey> prov=… addr=10.77.0.1
+//  Three things this deliberately does NOT do:
 //
-//  `svc` is the FQDN the box is served under, which is what the client can
-//  actually reach over HTTPS; `lan` is the address on the local segment.
+//   * It does not trust an advert. `svc` is an identity, but DNS is spoofable,
+//     so the discovered URL is fed through `ServerDiscoveryService`
+//     (/.well-known/nuvio) exactly like a typed one, and the user confirms it.
+//   * It does not pick when there is a choice. Two distinct advertised
+//     identities means two boxes; guessing which one belongs to this user is
+//     how a TV ends up paired with a neighbour's server.
+//   * It does not let discovery override a server the user chose by hand. When
+//     a host is configured, only adverts naming that host are offered.
 //
-//  The advert is spoofable — only `pk`/`ppk` are authenticated, and only
-//  during enrolment. So a discovered URL is never trusted on its own: it is
-//  fed through `ServerDiscoveryPolicy` (/.well-known/nuvio) exactly like a
-//  typed URL, and the user still has to confirm before it is saved.
-//
-//  Two browsers run side by side on purpose. `NWBrowser` is the modern API,
-//  but on tvOS it can sit in `.setup`/`.ready` and never report anything
-//  while the wire shows no query at all — and tvOS has no local-network
-//  permission (Apple's TN3179 implements it on iOS/iPadOS/visionOS/macOS
-//  only), so there is no prompt to blame and no error to show. The older
-//  `NetServiceBrowser` rides a different code path onto mDNSResponder; if
-//  one finds the box and the other does not, that tells us which layer is
-//  broken. `diagnostics` carries what both of them are doing, so the login
-//  screen can say it instead of spinning forever.
+//  Two browsers run on purpose. `NWBrowser` is the modern API; `NetService`
+//  is the older path onto mDNSResponder, and on tvOS it is the one whose
+//  explicit `resolve` actually fetches SRV/TXT — a browse alone carries the
+//  PTR's instance name and no TXT at all, which is why an un-resolved browse
+//  yields a name with nothing usable behind it.
 //
 
 import Combine
 import Foundation
 import Network
 
-/// Boomio: publishes `@Published` state that is only ever mutated on the main
-/// actor (both browsers run on the main run loop and every handler hops with
-/// `Task { @MainActor in … }`), so the class itself is not actor-isolated and
-/// can be created from a SwiftUI `@StateObject` initialiser.
-///
-/// `NSObject` because `NetServiceBrowser` needs an Objective-C delegate.
 final class LocalServerDiscovery: NSObject, ObservableObject {
     struct Box: Identifiable, Equatable {
-        /// Bonjour instance name, or the backend URL when the name is absent.
+        /// The advertised service name — the box's identity on the LAN.
         let id: String
-        /// Display label from the advert ("Boomio overlay").
+        /// Display label ("Boomio overlay").
         let name: String
-        /// `https://<svc>`, or `https://<lan>` when the box publishes no FQDN.
+        /// `https://<svc>`: the certificate is issued for this name.
         let backendURL: String
         let lanAddress: String?
         let serverPublicKey: String?
@@ -52,27 +43,26 @@ final class LocalServerDiscovery: NSObject, ObservableObject {
         var detail: String { lanAddress ?? backendURL }
     }
 
-    static let serviceType = "_boomio-overlay._udp"
-
     @Published private(set) var boxes: [Box] = []
     @Published private(set) var isSearching = false
-    /// Set when a browser itself fails. The UI shows it instead of silently
-    /// listing nothing.
+    /// Set when a browser itself fails. The UI shows it instead of spinning.
     @Published private(set) var failureMessage: String?
-    /// One line of live state for both browsers, e.g.
-    /// `nw ready/0 · ns found 1/1 · 14:22:03`. Nothing else on tvOS can show
-    /// whether the browse ever reached the mDNS daemon.
+    /// Two or more distinct boxes answered. The caller must make the user
+    /// choose rather than guessing.
+    @Published private(set) var conflictMessage: String?
+    /// One line of live state, e.g. `nw ready raw1 box1 · ns found 1/1 · 03:18:44`.
     @Published private(set) var diagnostics: String = ""
-    /// Second line: what the first result from each browser actually looked
-    /// like (endpoint, whether it carried a TXT, and the TXT's `svc`). The
-    /// search can fail in three places — nothing delivered, delivered with no
-    /// TXT, delivered but unusable — and only this tells them apart.
+    /// What the last result actually contained — the only way to tell "nothing
+    /// arrived" from "arrived, refused".
     @Published private(set) var detail: String = ""
+
+    /// When set, only adverts naming this host are offered (the user already
+    /// chose a server). Published so the "show every box" affordance follows
+    /// it rather than waiting for the next browse event.
+    @Published var configuredHost: String?
 
     private var browser: NWBrowser?
     private var netBrowser: NetServiceBrowser?
-    /// Retains what `NetServiceBrowser` hands us; a service that is released
-    /// before its delegate call returns is simply gone.
     private var netServices: [String: NetService] = [:]
 
     private var nwBoxes: [String: Box] = [:]
@@ -81,7 +71,6 @@ final class LocalServerDiscovery: NSObject, ObservableObject {
     private var nwState = "idle"
     private var nsState = "idle"
     private var nwHits = 0
-    /// Results handed over by NWBrowser, before any filtering by `box(from:)`.
     private var nwRaw = 0
     private var nwDetail = ""
     private var nsDetail = ""
@@ -91,12 +80,14 @@ final class LocalServerDiscovery: NSObject, ObservableObject {
     func start() {
         guard browser == nil, netBrowser == nil else { return }
         failureMessage = nil
+        conflictMessage = nil
         nwBoxes.removeAll()
         nsBoxes.removeAll()
         netServices.removeAll()
         nwState = "starting"
         nsState = "starting"
         nwHits = 0
+        nwRaw = 0
         publishDiagnostics()
 
         startNetworkBrowser()
@@ -116,6 +107,7 @@ final class LocalServerDiscovery: NSObject, ObservableObject {
         nwState = "stopped"
         nsState = "stopped"
         nwHits = 0
+        nwRaw = 0
         publishDiagnostics()
     }
 
@@ -123,6 +115,7 @@ final class LocalServerDiscovery: NSObject, ObservableObject {
         stop()
         boxes = []
         failureMessage = nil
+        conflictMessage = nil
         start()
     }
 
@@ -132,7 +125,7 @@ final class LocalServerDiscovery: NSObject, ObservableObject {
         let parameters = NWParameters.udp
         parameters.includePeerToPeer = false
 
-        let browser = NWBrowser(for: .bonjour(type: Self.serviceType, domain: nil), using: parameters)
+        let browser = NWBrowser(for: .bonjour(type: OverlayAdvert.serviceType, domain: nil), using: parameters)
         browser.stateUpdateHandler = { [weak self] state in
             Task { @MainActor in
                 guard let self else { return }
@@ -170,7 +163,7 @@ final class LocalServerDiscovery: NSObject, ObservableObject {
     private func apply(_ results: Set<NWBrowser.Result>) {
         var next: [String: Box] = [:]
         for result in results {
-            guard let box = Self.box(from: result), next[box.id] == nil else { continue }
+            guard let box = Self.box(from: result, configuredHost: configuredHost) else { continue }
             next[box.id] = box
         }
         nwBoxes = next
@@ -186,24 +179,33 @@ final class LocalServerDiscovery: NSObject, ObservableObject {
     private func startNetServiceBrowser() {
         let browser = NetServiceBrowser()
         browser.delegate = self
-        browser.searchForServices(ofType: Self.serviceType + ".", inDomain: "")
+        browser.searchForServices(ofType: OverlayAdvert.serviceType + ".", inDomain: "")
         self.netBrowser = browser
     }
 
     // MARK: - Merged results
 
     private func recomputeBoxes() {
-        // Network.framework results win when both paths find the same box:
-        // they carry the endpoint the system resolved.
-        var byURL: [String: Box] = [:]
-        for box in nwBoxes.values where byURL[box.backendURL] == nil {
-            byURL[box.backendURL] = box
+        // Identity is the advertised `svc`, not the instance name: avahi
+        // re-announces under the same name, and two instances that advertise
+        // the same box are one box.
+        var byService: [String: Box] = [:]
+        for box in nwBoxes.values.sorted(by: { $0.id < $1.id }) where byService[box.id] == nil {
+            byService[box.id] = box
         }
-        for box in nsBoxes.values where byURL[box.backendURL] == nil {
-            byURL[box.backendURL] = box
+        for box in nsBoxes.values.sorted(by: { $0.id < $1.id }) where byService[box.id] == nil {
+            byService[box.id] = box
         }
-        boxes = byURL.values.sorted {
+
+        let merged = byService.values.sorted {
             $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+        boxes = merged
+
+        if merged.count > 1 {
+            conflictMessage = "More than one Boomio box is advertising on this network. Choose the one you trust."
+        } else {
+            conflictMessage = nil
         }
     }
 
@@ -214,10 +216,10 @@ final class LocalServerDiscovery: NSObject, ObservableObject {
     }
 
     private static let clock: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "HH:mm:ss"
-        return f
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
     }()
 
     // MARK: - Advert parsing
@@ -241,48 +243,44 @@ final class LocalServerDiscovery: NSObject, ObservableObject {
 
     private static func message(for error: NWError, source: String) -> String {
         if case let .dns(code) = error, code == -65555 {
-            return "\(source): local-network access denied (DNS -65555)."
+            return "\(source): the system refused the local-network browse (DNS -65555)."
         }
         return "\(source): \(error)"
     }
 
-    private static func box(from result: NWBrowser.Result) -> Box? {
+    private static func box(from result: NWBrowser.Result, configuredHost: String?) -> Box? {
         guard case let .bonjour(record) = result.metadata else { return nil }
-        var values: [String: String] = [:]
-        for key in ["svc", "lan", "pk"] {
-            if let value = txt(record, key) { values[key] = value }
+        // Re-assembled as `key=value` strings so this path goes through the
+        // SAME parser as the NetService and DNS-TXT paths: the semicolon
+        // framing rule and the v==2/svc gates then cannot differ per browser.
+        var strings: [String] = []
+        for key in ["v", "svc", "lan", "pk"] {
+            if let value = txt(record, key) { strings.append("\(key)=\(value)") }
         }
-        return box(instance: instanceName(result), txt: values)
+        return box(
+            instance: instanceName(result),
+            advert: OverlayAdvert.parse(txtStrings: strings),
+            configuredHost: configuredHost
+        )
     }
 
-    /// Builds a box from the advert's TXT values. Both browsers land here, so
-    /// the URL the login screen offers does not depend on which one answered.
-    private static func box(instance: String?, txt values: [String: String]) -> Box? {
-        let systemName = values["svc"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let lan = values["lan"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Builds a box from an advert. Every browser lands here, so the URL the
+    /// login screen offers never depends on which one answered.
+    private static func box(instance: String?, advert: OverlayAdvert?, configuredHost: String?) -> Box? {
+        guard let advert, advert.matches(configuredHost: configuredHost) else { return nil }
 
-        // Prefer the FQDN: the certificate is issued for it, and a bare LAN
-        // address will usually fail TLS verification.
-        let host: String
-        if let systemName, !systemName.isEmpty {
-            host = systemName
-        } else if let lan, !lan.isEmpty {
-            host = lan
-        } else {
-            return nil
-        }
-
+        let host = advert.preferredHost
         guard let url = URL(string: "https://" + host), url.host != nil else { return nil }
         var backendURL = url.absoluteString
         while backendURL.hasSuffix("/") { backendURL.removeLast() }
 
         let label = (instance?.isEmpty == false ? instance : nil) ?? host
         return Box(
-            id: label,
+            id: advert.serviceName,
             name: label,
             backendURL: backendURL,
-            lanAddress: (lan?.isEmpty == false) ? lan : nil,
-            serverPublicKey: values["pk"]
+            lanAddress: advert.lanHost,
+            serverPublicKey: advert.serverPublicKey
         )
     }
 
@@ -292,9 +290,7 @@ final class LocalServerDiscovery: NSObject, ObservableObject {
     }
 
     /// One-line account of a raw browse result: the endpoint it names and
-    /// whether it carried a TXT record (and what `svc`/`lan` it held). A result
-    /// with no TXT cannot be turned into a box, and this is the only way to see
-    /// that from the TV.
+    /// whether it carried a TXT. A result with no TXT cannot become a box.
     private static func describe(_ result: NWBrowser.Result) -> String {
         var parts: [String] = []
         if case let .service(name, type, domain, _) = result.endpoint {
@@ -305,8 +301,8 @@ final class LocalServerDiscovery: NSObject, ObservableObject {
         switch result.metadata {
         case .bonjour(let record):
             let svc = txt(record, "svc") ?? "<nil>"
-            let lan = txt(record, "lan") ?? "<nil>"
-            parts.append("txt svc=\(svc) lan=\(lan)")
+            let version = txt(record, "v") ?? "<nil>"
+            parts.append("txt v=\(version) svc=\(svc)")
         case .none:
             parts.append("txt NONE")
         @unknown default:
@@ -330,26 +326,22 @@ final class LocalServerDiscovery: NSObject, ObservableObject {
     }
 
     /// DNS TXT data as returned by `NetService.txtRecordData()`: a sequence of
-    /// length-prefixed `key=value` strings.
-    private static func parseTXT(_ data: Data?) -> [String: String] {
-        guard let data else { return [:] }
+    /// length-prefixed strings.
+    private static func parseTXT(_ data: Data?) -> [String] {
+        guard let data else { return [] }
         let bytes = [UInt8](data)
-        var values: [String: String] = [:]
-        var i = 0
-        while i < bytes.count {
-            let length = Int(bytes[i])
-            i += 1
-            guard length > 0, i + length <= bytes.count else { break }
-            let chunk = Data(bytes[i..<(i + length)])
-            i += length
-            guard let entry = String(data: chunk, encoding: .utf8) else { continue }
-            if let separator = entry.firstIndex(of: "=") {
-                let key = String(entry[entry.startIndex..<separator])
-                let value = String(entry[entry.index(after: separator)...])
-                values[key] = value
+        var strings: [String] = []
+        var index = 0
+        while index < bytes.count {
+            let length = Int(bytes[index])
+            index += 1
+            guard length > 0, index + length <= bytes.count else { break }
+            if let entry = String(data: Data(bytes[index..<(index + length)]), encoding: .utf8) {
+                strings.append(entry)
             }
+            index += length
         }
-        return values
+        return strings
     }
 }
 
@@ -380,43 +372,49 @@ extension LocalServerDiscovery: NetServiceBrowserDelegate, NetServiceDelegate {
 
     func netServiceBrowser(_ browser: NetServiceBrowser, didFind service: NetService, moreComing: Bool) {
         let name = service.name
-        let txtData = service.txtRecordData()
-        let values = Self.parseTXT(txtData)
-        let txtBytes = txtData.map { "\($0.count)B" } ?? "nil"
-        // Retained here, synchronously: a NetService released before its
-        // resolve finishes simply stops, and the delegate was weak.
+        let strings = Self.parseTXT(service.txtRecordData())
+        let bytes = service.txtRecordData().map { "\($0.count)B" } ?? "nil"
+        // Retained synchronously: a NetService released before its resolve
+        // finishes simply stops, and the delegate is weak.
         netServices[name] = service
+
         Task { @MainActor in
-            if let box = Self.box(instance: name, txt: values) {
+            if let box = Self.box(
+                instance: name,
+                advert: OverlayAdvert.parse(txtStrings: strings),
+                configuredHost: self.configuredHost
+            ) {
                 self.nsBoxes[box.id] = box
             }
-            self.nsDetail = "ns \"\(name)\" txt=\(txtBytes) keys=\(values.count)"
+            self.nsDetail = "ns \"\(name)\" txt=\(bytes) fields=\(strings.count)"
             self.nsState = "found \(self.nsBoxes.count)"
             self.recomputeBoxes()
             self.publishDiagnostics()
         }
-        // A browse result carries the PTR's instance name only. The TXT is a
-        // separate record and mDNSResponder will not fetch it on our behalf:
-        // the wire shows the TV asking for the PTR and nothing else, so
-        // `txtRecordData()` here is nil and no box can be built. Resolving by
-        // name asks for SRV+TXT explicitly, which is the only way to get `svc`.
+
+        // A browse result carries the PTR's instance name only. mDNSResponder
+        // will not fetch the TXT on our behalf, so this resolve is what asks
+        // for SRV+TXT — without it `txtRecordData()` stays nil forever.
         service.delegate = self
         service.resolve(withTimeout: 5)
     }
 
     func netServiceDidResolveAddress(_ sender: NetService) {
         let name = sender.name
-        let txtData = sender.txtRecordData()
-        let values = Self.parseTXT(txtData)
-        let txtBytes = txtData.map { "\($0.count)B" } ?? "nil"
+        let strings = Self.parseTXT(sender.txtRecordData())
         let host = sender.hostName ?? "no-host"
         netServices[name] = sender
+
         Task { @MainActor in
-            if let box = Self.box(instance: name, txt: values) {
+            if let box = Self.box(
+                instance: name,
+                advert: OverlayAdvert.parse(txtStrings: strings),
+                configuredHost: self.configuredHost
+            ) {
                 self.nsBoxes[box.id] = box
-                self.nsDetail = "ns \"\(name)\" resolved \(host) txt=\(txtBytes)"
+                self.nsDetail = "ns \"\(name)\" resolved \(host) fields=\(strings.count)"
             } else {
-                self.nsDetail = "ns \"\(name)\" resolved \(host), no svc/lan txt=\(txtBytes)"
+                self.nsDetail = "ns \"\(name)\" resolved \(host), advert refused"
             }
             self.nsState = "found \(self.nsBoxes.count)"
             self.recomputeBoxes()
@@ -429,17 +427,6 @@ extension LocalServerDiscovery: NetServiceBrowserDelegate, NetServiceDelegate {
         let code = errorDict[NetService.errorCode]?.intValue ?? 0
         Task { @MainActor in
             self.nsDetail = "ns \"\(name)\" didNotResolve \(code)"
-            self.publishDiagnostics()
-        }
-    }
-
-    func netServiceBrowser(_ browser: NetServiceBrowser, didRemove service: NetService, moreComing: Bool) {
-        let name = service.name
-        Task { @MainActor in
-            self.netServices[name] = nil
-            self.nsBoxes.removeValue(forKey: name)
-            self.nsState = "found \(self.nsBoxes.count)"
-            self.recomputeBoxes()
             self.publishDiagnostics()
         }
     }
