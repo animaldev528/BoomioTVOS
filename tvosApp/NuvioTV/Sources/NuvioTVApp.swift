@@ -24,6 +24,16 @@ struct NuvioTVApp: App {
         let diskCapacity = isLegacyDevice ? (60 * 1024 * 1024) : (150 * 1024 * 1024)
         URLCache.shared.memoryCapacity = memCapacity
         URLCache.shared.diskCapacity = diskCapacity
+        // Re-arm the device certificate for a launch that skips onboarding.
+        // Certificate presentation is process-scoped on purpose, so a fresh
+        // launch talks to the box certless until the stored session confirms
+        // the edge still lists this leaf.
+        if AuthConfig.isConfigured,
+           let backend = URL(string: AuthConfig.apiBaseURL),
+           let plane = BoomioPlane(backendURL: backend) {
+            let enrolment = BoomioEnrolment()
+            Task { @MainActor in enrolment.resumeRegistration(plane: plane) }
+        }
         TopShelfRatingsBridge.install()
         // Before launch finishes, as BGTaskScheduler requires.
         TopShelfBackgroundRefresh.register()
@@ -36,6 +46,13 @@ struct NuvioTVApp: App {
         }
 
         #if canImport(AetherEngine)
+        // The engine owns the media fetches (demuxer AVIO, HLS ingest,
+        // prewarm), so the box's device certificate has to be presented from
+        // its sessions or not at all. The identity answers only for the
+        // enrolled host, once the edge has accepted the leaf.
+        EngineTLS.clientCertificateCredential = { space in
+            BoomioClientIdentity.shared.clientCredential(for: space)
+        }
         // Schedule AetherEngine prewarming on its required main actor before
         // player appearance.
         Task(priority: .utility) { @MainActor in

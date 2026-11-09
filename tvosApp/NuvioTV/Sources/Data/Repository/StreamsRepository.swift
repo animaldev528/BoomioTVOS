@@ -533,7 +533,7 @@ final class StreamsRepository: ObservableObject {
         from url: URL,
         addonName: String,
         logo: String?,
-        session: URLSession = .shared
+        session: URLSession = BoomioSession.addonSession
     ) async throws -> [NuvioStream] {
         var request = URLRequest(url: url)
         request.timeoutInterval = streamRequestTimeout
@@ -607,7 +607,7 @@ final class StreamsRepository: ObservableObject {
         config.timeoutIntervalForRequest = 8
         config.timeoutIntervalForResource = 10
         config.waitsForConnectivity = false
-        return URLSession(configuration: config)
+        return URLSession(configuration: config, delegate: CertificateChallengeDelegate(), delegateQueue: nil)
     }()
 
     private static func fetchManifest(_ url: URL) async -> StreamAddonManifest? {

@@ -104,6 +104,44 @@ final class BoomioEnrolment: ObservableObject {
         stage = .idle
     }
 
+    /// Re-arms certificate presentation on a launch that never opens
+    /// onboarding.
+    ///
+    /// Presentation lives in memory (see `BoomioClientIdentity`), because the
+    /// edge is the only authority on whether it still lists this leaf. So a
+    /// fresh process starts certless by design, and this is what leaves that
+    /// state: the stored session re-registers the SAME certificate without a
+    /// human, and a success re-arms presentation for the rest of the launch.
+    /// Nothing is shown to the user — onboarding is where a failure belongs.
+    func resumeRegistration(plane: BoomioPlane) {
+        sessionAccount = Self.sessionAccount(for: plane)
+        guard let account = sessionAccount,
+              let token = BoomioSecureStore.string(account)
+        else { return }
+
+        task?.cancel()
+        task = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let identity = BoomioClientIdentity.shared
+                let certificate = try identity.certificate()
+                let reply = try await BoomioAPI(plane: plane).registerCertificate(
+                    pem: certificate.pem,
+                    fingerprint: identity.hardwareFingerprint,
+                    sessionToken: token
+                )
+                if let host = plane.expectedServiceHost {
+                    identity.markRegistered(host: host)
+                }
+                if self.runId == 0 { self.certificateFingerprint = reply.fingerprint_sha256 }
+            } catch {
+                // Stay certless. The media and sign-in surface admits that, and
+                // onboarding will pair afresh if the session is truly gone.
+            }
+            if self.runId == 0 { self.task = nil }
+        }
+    }
+
     /// Re-registers the existing certificate with the session already held.
     /// This is the recovery path when the edge reports the device as unknown —
     /// it re-sends the SAME bytes, which is what the allow-list needs.
@@ -118,6 +156,9 @@ final class BoomioEnrolment: ObservableObject {
                 sessionToken: token
             )
             certificateFingerprint = reply.fingerprint_sha256
+            if let host = plane.expectedServiceHost {
+                BoomioClientIdentity.shared.markRegistered(host: host)
+            }
             stage = .ready
         } catch {
             stage = .failed(error.localizedDescription)
@@ -208,6 +249,11 @@ final class BoomioEnrolment: ObservableObject {
         )
         guard isCurrent(run) else { return }
         certificateFingerprint = reply.fingerprint_sha256
+        // The edge lists the leaf from here on, so later requests may present
+        // it. `markRegistered` waits out the edge's allow-list cache.
+        if let host = plane.expectedServiceHost {
+            identity.markRegistered(host: host)
+        }
 
         try Task.checkCancellation()
         guard isCurrent(run) else { return }
@@ -260,6 +306,11 @@ final class BoomioEnrolment: ObservableObject {
 
     private func clearSession() {
         sessionToken = nil
+        // Presentation rides on the same trust as the session: a 401/403
+        // means the box no longer knows this device, so the leaf it would
+        // present may already be refused by the edge. Pairing and
+        // re-registration both work certless.
+        BoomioClientIdentity.shared.suspendPresentation()
         if let account = sessionAccount {
             BoomioSecureStore.remove(account)
         }

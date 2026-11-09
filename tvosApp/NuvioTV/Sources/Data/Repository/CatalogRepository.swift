@@ -341,7 +341,7 @@ actor StremioManifestDataCache {
         config.waitsForConnectivity = false
         config.urlCache = manifestURLCache
         config.requestCachePolicy = .useProtocolCachePolicy
-        return URLSession(configuration: config)
+        return URLSession(configuration: config, delegate: CertificateChallengeDelegate(), delegateQueue: nil)
     }()
 
     static func telemetryMetrics() -> (count: Int, totalBytes: Int) {
@@ -665,7 +665,7 @@ final class CinemetaCatalogRepository: CatalogRepository {
         config.timeoutIntervalForRequest = 8
         config.timeoutIntervalForResource = 10
         config.waitsForConnectivity = false
-        return URLSession(configuration: config)
+        return URLSession(configuration: config, delegate: CertificateChallengeDelegate(), delegateQueue: nil)
     }()
     private static var networkSessionOverrideForTesting: URLSession?
 

@@ -606,6 +606,21 @@ final class MPVStreamSession: NSObject, URLSessionDataDelegate, @unchecked Senda
 
     // MARK: - URLSessionDataDelegate
 
+    // The stream URL can sit on the box's /bsf plane, which keys access on the
+    // presented device certificate; this session is the MPV fallback's only
+    // path to those bytes.
+    func urlSession(
+        _ session: URLSession,
+        didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        if let credential = BoomioClientIdentity.shared.clientCredential(for: challenge.protectionSpace) {
+            completionHandler(.useCredential, credential)
+            return
+        }
+        completionHandler(.performDefaultHandling, nil)
+    }
+
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
         condition.lock()
         defer {

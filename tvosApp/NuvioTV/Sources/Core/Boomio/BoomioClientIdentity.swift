@@ -134,6 +134,81 @@ final class BoomioClientIdentity {
         return BoomioClientCertificate(commonName: expectedName, der: der, pem: X509.pem(der: der))
     }
 
+    // MARK: - Presentation
+
+    /// The host whose edge accepted this certificate, and the instant from
+    /// which presenting it is safe.
+    ///
+    /// ⚠️ Presentation is gated on a registration that SUCCEEDED in this
+    /// process, never on "a certificate exists". The edge refuses a presented
+    /// certificate it does not list — a TLS alert, before any HTTP exchange —
+    /// so presenting the freshly minted leaf before `/overlay/cert` has
+    /// written it into the allow-list aborts the very request that would have
+    /// registered it. That was the first-launch deadlock: pairing never
+    /// reached the server, and the TV could only show a network failure
+    /// instead of a code.
+    ///
+    /// The state is deliberately in memory. After a relaunch the first
+    /// enrolment call goes out certless, re-registers the SAME leaf with the
+    /// stored session, and presentation re-arms — which is also what heals a
+    /// box reset that dropped the allow-list entry.
+    private let presentationLock = NSLock()
+    private var registeredHost: String?
+    private var presentFrom: Date?
+
+    /// Records that the edge accepted this certificate for `host`.
+    ///
+    /// `delay` covers the edge's own allow-list cache: `verifier leafdir`
+    /// re-reads the certificate folder on a 30 s TTL, so a file written a
+    /// second ago can still be unknown to the next handshake.
+    func markRegistered(host: String, after delay: TimeInterval = 35) {
+        presentationLock.lock()
+        registeredHost = Self.normalizedHost(host)
+        presentFrom = Date().addingTimeInterval(delay)
+        presentationLock.unlock()
+    }
+
+    /// Withdraws presentation for the rest of this process.
+    ///
+    /// Called when the edge rejected a handshake anyway — a revoked device, a
+    /// reset box, or a race with the allow-list TTL. The next request must go
+    /// out certless: a certless caller is admitted on the media and sign-in
+    /// surface, which is enough to pair and re-register. Returns whether
+    /// anything was actually withdrawn.
+    @discardableResult
+    func suspendPresentation() -> Bool {
+        presentationLock.lock()
+        defer { presentationLock.unlock() }
+        let wasPresenting = registeredHost != nil
+        registeredHost = nil
+        presentFrom = nil
+        return wasPresenting
+    }
+
+    /// The credential to present for `space`, or nil to go certless.
+    ///
+    /// Scoped to the enrolled host: presenting a device certificate to a
+    /// third-party addon server would hand it an identity it has no business
+    /// seeing.
+    func clientCredential(for space: URLProtectionSpace) -> URLCredential? {
+        guard space.authenticationMethod == NSURLAuthenticationMethodClientCertificate else { return nil }
+        presentationLock.lock()
+        let host = registeredHost
+        let from = presentFrom
+        presentationLock.unlock()
+        guard let host, let from, Date() >= from,
+              Self.normalizedHost(space.host) == host,
+              let identity = secIdentity()
+        else { return nil }
+        return URLCredential(identity: identity, certificates: nil, persistence: .forSession)
+    }
+
+    private static func normalizedHost(_ host: String) -> String {
+        var value = host.lowercased()
+        if value.hasSuffix(".") { value.removeLast() }
+        return value
+    }
+
     /// The Keychain identity used to present the certificate on TLS.
     ///
     /// Returns nil when the pair cannot be formed — the caller then simply
