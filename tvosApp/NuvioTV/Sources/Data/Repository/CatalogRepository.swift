@@ -2369,7 +2369,16 @@ final class CinemetaCatalogRepository: CatalogRepository {
                 return candidateIndex
             }()
 
-            let existingIndex = matchIndexByIdentity ?? matchIndexByFallback
+            var existingIndex = matchIndexByIdentity ?? matchIndexByFallback
+            // An episode result is one episode, never its show: an episodes
+            // catalog can name a tile with the show's own title and year, and
+            // the fallback content match would collapse it into the show's
+            // poster. Only an identical id may merge here.
+            if let index = existingIndex,
+               item.isEpisodeResult || result[index].isEpisodeResult,
+               result[index].id != item.id {
+                existingIndex = nil
+            }
 
             if let existingIndex {
                 // Merge any missing aliases or metadata from duplicate into the kept item
