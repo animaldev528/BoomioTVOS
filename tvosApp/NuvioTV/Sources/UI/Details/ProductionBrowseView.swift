@@ -374,6 +374,9 @@ struct PersonBrowseView: View {
     @State private var detail: ScenePersonDetail? = nil
     @State private var isLoading = true
     @State private var scrollOffset: CGFloat = 0
+    /// True once this person has a Home shelf — including one added from
+    /// another device and pulled by sync before this page opened.
+    @State private var addedToHome = false
     @FocusState private var focusedCardID: String?
     @FocusState private var placeholderFocused: Bool
     @AppStorage(SettingsKey.amoled) private var amoled = false
@@ -474,6 +477,9 @@ struct PersonBrowseView: View {
         .onExitCommand(perform: onBack)
         .task(id: person.id) {
             isLoading = true
+            if let tmdbId = person.tmdbId {
+                addedToHome = CollectionQuickAdd.personCollectionTitle(tmdbId: tmdbId) != nil
+            }
             let provider = TmdbSceneCastProvider()
             detail = await provider.fetchPersonDetail(for: person)
             isLoading = false
@@ -570,6 +576,19 @@ struct PersonBrowseView: View {
                         .lineSpacing(4)
                         .lineLimit(4)
                         .padding(.top, 4)
+                }
+
+                if let tmdbId = person.tmdbId {
+                    PersonAddToHomeButton(isAdded: addedToHome) {
+                        guard !addedToHome else { return }
+                        CollectionQuickAdd.addPerson(
+                            name: displayName,
+                            tmdbId: tmdbId,
+                            role: person.role
+                        )
+                        addedToHome = true
+                    }
+                    .padding(.top, 16)
                 }
             }
 
@@ -769,5 +788,44 @@ struct ProductionBrowseCard: View {
             parts.append(String(format: "★ %.1f", rating))
         }
         return parts.joined(separator: "  ·  ")
+    }
+}
+
+/// Capsule action on the person page. Stays focusable once added — removing it
+/// from the focus chain would move the remote's focus out from under the user
+/// mid-page — but a second press does nothing.
+private struct PersonAddToHomeButton: View {
+    let isAdded: Bool
+    let action: () -> Void
+
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: isAdded ? "checkmark" : "plus.rectangle.on.folder")
+                    .font(.system(size: 20, weight: .semibold))
+                Text(
+                    isAdded
+                        ? L10n.string("person_on_home", fallback: "On Home")
+                        : L10n.string("person_add_to_home", fallback: "Add to Home")
+                )
+                .font(.system(size: 22, weight: .semibold))
+            }
+            .foregroundColor(isAdded ? Color.white.opacity(0.72) : .white)
+            .padding(.horizontal, 26)
+            .frame(height: 56)
+            .background(Color.white.opacity(focused ? 0.28 : 0.14), in: Capsule())
+            .overlay(
+                Capsule()
+                    .strokeBorder(
+                        Color.white.opacity(focused ? 0.92 : 0.22),
+                        lineWidth: focused ? AppFocusOutline.width : 1
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .focused($focused)
+        .animation(.easeOut(duration: 0.15), value: focused)
     }
 }
