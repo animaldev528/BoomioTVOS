@@ -4662,7 +4662,8 @@ private struct TVMainTabView: View {
                 onContentClick: onNavigateToDetails,
                 onLongPress: onLongPressCard,
                 onOpenResult: onOpenSearchResult,
-                onOpenPerson: onOpenSearchPerson
+                onOpenPerson: onOpenSearchPerson,
+                onExitSearch: { selectedTab = .home }
             )
         } else if searchStyle == "Grid" {
             NativeSearchView(
@@ -4675,7 +4676,8 @@ private struct TVMainTabView: View {
                 onContentClick: onNavigateToDetails,
                 onLongPress: onLongPressCard,
                 onOpenResult: onOpenSearchResult,
-                onOpenPerson: onOpenSearchPerson
+                onOpenPerson: onOpenSearchPerson,
+                onExitSearch: { selectedTab = .home }
             )
         } else if searchStyle == "Native" {
             NativeSearchView(
@@ -4688,7 +4690,8 @@ private struct TVMainTabView: View {
                 onContentClick: onNavigateToDetails,
                 onLongPress: onLongPressCard,
                 onOpenResult: onOpenSearchResult,
-                onOpenPerson: onOpenSearchPerson
+                onOpenPerson: onOpenSearchPerson,
+                onExitSearch: { selectedTab = .home }
             )
         } else {
             NetflixSearchView(
@@ -4700,7 +4703,8 @@ private struct TVMainTabView: View {
                 onContentClick: onNavigateToDetails,
                 onLongPress: onLongPressCard,
                 onOpenResult: onOpenSearchResult,
-                onOpenPerson: onOpenSearchPerson
+                onOpenPerson: onOpenSearchPerson,
+                onExitSearch: { selectedTab = .home }
             )
         }
     }
