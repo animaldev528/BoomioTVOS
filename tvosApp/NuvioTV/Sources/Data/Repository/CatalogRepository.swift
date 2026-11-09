@@ -66,13 +66,38 @@ enum CatalogSearchReason: Equatable {
     }
 }
 
+/// One source's search results, in the order the add-on declared them.
+///
+/// Search used to melt every catalog into a single grid, which lost the thing
+/// Android shows and the AI Episode catalog exists for: WHICH catalog an item
+/// came from. Keeping the origin lets the client draw one row per source
+/// instead of one undifferentiated wall of tiles.
+struct CatalogSearchSection: Identifiable {
+    /// Stable within one outcome: source + type + catalog.
+    let id: String
+    let title: String
+    let addonName: String
+    let catalogId: String
+    let type: String
+    let results: [NuvioMeta]
+}
+
 struct CatalogSearchOutcome {
     let results: [NuvioMeta]
+    /// Per-source rows. Always present for a repository that knows its
+    /// sources; empty only for the flat compatibility paths.
+    let sections: [CatalogSearchSection]
     let isComplete: Bool
     let reason: CatalogSearchReason?
 
-    init(results: [NuvioMeta], isComplete: Bool, reason: CatalogSearchReason? = nil) {
+    init(
+        results: [NuvioMeta],
+        sections: [CatalogSearchSection] = [],
+        isComplete: Bool,
+        reason: CatalogSearchReason? = nil
+    ) {
         self.results = results
+        self.sections = sections
         self.isComplete = isComplete
         if let reason {
             self.reason = reason
@@ -399,16 +424,41 @@ actor StremioManifestDataCache {
             let newFlight = InFlightEntry(
                 identity: UUID(),
                 task: Task<FetchResult?, Never> {
-                    do {
-                        var request = URLRequest(url: url)
-                        request.timeoutInterval = 8
-                        let (data, response) = try await flightSession.data(for: request)
-                        guard let http = response as? HTTPURLResponse,
-                              200..<300 ~= http.statusCode else { return nil }
-                        return FetchResult(data: data, responseURL: http.url)
-                    } catch {
-                        return nil
+                    func send(_ request: URLRequest) async -> (Data, HTTPURLResponse)? {
+                        do {
+                            let (data, response) = try await flightSession.data(for: request)
+                            guard let http = response as? HTTPURLResponse else { return nil }
+                            return (data, http)
+                        } catch {
+                            return nil
+                        }
                     }
+
+                    var request = URLRequest(url: url)
+                    request.timeoutInterval = 8
+
+                    guard let first = await send(request) else { return nil }
+                    if 200..<300 ~= first.1.statusCode {
+                        return FetchResult(data: first.0, responseURL: first.1.url)
+                    }
+
+                    // A 403 on the enrolled box means this request went out
+                    // certless: presentation only arms once the launch-time
+                    // re-registration has succeeded and the edge's allow-list
+                    // cache has expired. Home used to lose its rows for the
+                    // rest of the launch to that race. Wait for the
+                    // certificate, then ask once more — with the cache bypassed,
+                    // so the refused response cannot be handed back.
+                    guard first.1.statusCode == 403,
+                          let host = url.host,
+                          await BoomioClientIdentity.shared.waitForPresentation(for: host)
+                    else { return nil }
+
+                    request.cachePolicy = .reloadIgnoringLocalCacheData
+                    guard let retry = await send(request),
+                          200..<300 ~= retry.1.statusCode
+                    else { return nil }
+                    return FetchResult(data: retry.0, responseURL: retry.1.url)
                 },
                 urlCache: flightURLCache
             )
@@ -2069,6 +2119,9 @@ final class CinemetaCatalogRepository: CatalogRepository {
             let type: String
             let catalogId: String
             let isAddon: Bool
+            /// Row label for this source ("AI Episodes"), falling back to the
+            /// add-on name when the catalog declares none.
+            let displayName: String
         }
 
         var targets: [SearchTarget] = []
@@ -2093,7 +2146,8 @@ final class CinemetaCatalogRepository: CatalogRepository {
                     baseURL: baseURL,
                     type: type,
                     catalogId: "top",
-                    isAddon: false
+                    isAddon: false,
+                    displayName: Self.cinemetaDisplayName
                 ))
             }
         }
@@ -2124,7 +2178,9 @@ final class CinemetaCatalogRepository: CatalogRepository {
                             baseURL: sourceBaseURL,
                             type: catalog.type,
                             catalogId: catalog.id,
-                            isAddon: true
+                            isAddon: true,
+                            displayName: catalog.name?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                                ?? addonName
                         )
                     )
                 }
@@ -2213,6 +2269,48 @@ final class CinemetaCatalogRepository: CatalogRepository {
         let failedTargetCount = targetResults.filter { !$0.succeeded }.count
         let rawResults = targetResults.flatMap { $0.items }
         let deduplicated = Self.deduplicatedSearchResults(rawResults)
+
+        // Rows, in the order the sources were queried. Deduplication is
+        // per-source: the same title served by two catalogs is two rows on
+        // purpose (that is what Android draws), and an episode is never
+        // merged into its show.
+        var itemsByTarget: [Int: [NuvioMeta]] = [:]
+        for result in targetResults where !result.items.isEmpty {
+            itemsByTarget[result.index] = result.items
+        }
+        // One row per source CATALOG, not per (catalog, type). The built-in
+        // Cinemeta catalog is queried once per type under the same catalog id,
+        // so grouping by target would draw two rows both titled "Cinemeta".
+        // Add-on catalogs that genuinely differ keep their own id and row.
+        var sectionOrder: [String] = []
+        var sectionTargets: [String: SearchTarget] = [:]
+        var sectionItems: [String: [NuvioMeta]] = [:]
+        for (index, target) in targets.enumerated() {
+            guard let items = itemsByTarget[index] else { continue }
+            let key = "\(target.catalogId)|\(target.addonName)"
+            if sectionTargets[key] == nil {
+                sectionTargets[key] = target
+                sectionOrder.append(key)
+            }
+            sectionItems[key, default: []].append(contentsOf: items)
+        }
+        var sections: [CatalogSearchSection] = []
+        for key in sectionOrder {
+            guard let target = sectionTargets[key],
+                  let items = sectionItems[key] else { continue }
+            let sourceResults = Self.deduplicatedSearchResults(items)
+            guard !sourceResults.isEmpty else { continue }
+            sections.append(CatalogSearchSection(
+                id: key,
+                title: target.displayName,
+                addonName: target.addonName,
+                catalogId: target.catalogId,
+                type: target.type,
+                results: sourceResults
+            ))
+        }
+
+        cacheMetadata(sections.flatMap { $0.results }, context: metadataContext)
         cacheMetadata(deduplicated, context: metadataContext)
         let isComplete = missingManifestCount == 0 && failedTargetCount == 0
         logCatalogSearchOutcome(
@@ -2226,7 +2324,11 @@ final class CinemetaCatalogRepository: CatalogRepository {
             totalResults: deduplicated.count,
             isComplete: isComplete
         )
-        return CatalogSearchOutcome(results: deduplicated, isComplete: isComplete)
+        return CatalogSearchOutcome(
+            results: deduplicated,
+            sections: sections,
+            isComplete: isComplete
+        )
     }
 
     /// Search sources can identify the same title differently (for example,
@@ -2267,7 +2369,16 @@ final class CinemetaCatalogRepository: CatalogRepository {
                 return candidateIndex
             }()
 
-            let existingIndex = matchIndexByIdentity ?? matchIndexByFallback
+            var existingIndex = matchIndexByIdentity ?? matchIndexByFallback
+            // An episode result is one episode, never its show: an episodes
+            // catalog can name a tile with the show's own title and year, and
+            // the fallback content match would collapse it into the show's
+            // poster. Only an identical id may merge here.
+            if let index = existingIndex,
+               item.isEpisodeResult || result[index].isEpisodeResult,
+               result[index].id != item.id {
+                existingIndex = nil
+            }
 
             if let existingIndex {
                 // Merge any missing aliases or metadata from duplicate into the kept item
@@ -3025,12 +3136,21 @@ final class CinemetaCatalogRepository: CatalogRepository {
         var request = URLRequest(url: url)
         request.timeoutInterval = 8
         request.setValue("Mozilla/5.0 (AppleTV; tvOS 18.0) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
-        let (data, response) = try await Self.sessionForRequests.data(for: request)
-        guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
+        var result = try await Self.sessionForRequests.data(for: request)
+        // The same startup race the manifest cache handles: a row request that
+        // goes out certless is refused 403 on the enrolled box until
+        // presentation arms. Wait for the certificate, then ask once more.
+        if (result.1 as? HTTPURLResponse)?.statusCode == 403,
+           let host = url.host,
+           await BoomioClientIdentity.shared.waitForPresentation(for: host) {
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            result = try await Self.sessionForRequests.data(for: request)
+        }
+        guard let http = result.1 as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             throw URLError(.badServerResponse)
         }
         // Each concurrent add-on request gets its own decoder.
-        return try JSONDecoder().decode(T.self, from: data)
+        return try JSONDecoder().decode(T.self, from: result.0)
     }
 }
 

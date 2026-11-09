@@ -25,6 +25,12 @@ enum SearchContentType: String, CaseIterable, Identifiable {
 class SearchViewModel: ObservableObject {
     @Published var searchText = ""
     @Published var results: [NuvioMeta] = []
+    /// Results grouped by their source catalog, in source order. The grids use
+    /// this to draw one row per catalog; `results` stays the flat list for the
+    /// existing single-grid presentation and for empty-state logic.
+    @Published var sections: [CatalogSearchSection] = []
+    /// TMDB people matching the query, shown above the title rows.
+    @Published var people: [TmdbPersonMetadata] = []
     @Published var isLoading = false
     @Published var error: String?
     @Published var emptyStateReason: CatalogSearchReason?
@@ -38,6 +44,8 @@ class SearchViewModel: ObservableObject {
     private let repository: CatalogRepository
     private let searchTimeout: TimeInterval
     private var allResults: [NuvioMeta] = []
+    private var allSections: [CatalogSearchSection] = []
+    private var peopleTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
     private var searchTask: Task<Void, Never>?
     private var searchTimeoutTask: Task<Void, Never>?
@@ -104,8 +112,12 @@ class SearchViewModel: ObservableObject {
             sessionCommittedQuery = nil
             searchTask?.cancel()
             enrichmentTask?.cancel()
+            peopleTask?.cancel()
             allResults = []
+            allSections = []
             results = []
+            sections = []
+            people = []
             error = nil
             emptyStateReason = nil
             isLoading = false
@@ -118,10 +130,21 @@ class SearchViewModel: ObservableObject {
             searchTask?.cancel()
             enrichmentTask?.cancel()
             allResults = cached.results
+            allSections = cached.sections
             applyFilter()
             error = nil
             emptyStateReason = cached.results.isEmpty ? cached.reason : nil
             isLoading = false
+            searchPeople(for: trimmed, generation: searchGeneration)
+            if SearchResultEnrichment.hasIncompleteLeadingResults(cached.results)
+                || SearchResultEnrichment.hasIncompleteLeadingSections(cached.sections) {
+                enrich(
+                    cached.results,
+                    cacheKey: cacheKey,
+                    generation: searchGeneration,
+                    cacheable: true
+                )
+            }
             return
         }
 
@@ -146,8 +169,12 @@ class SearchViewModel: ObservableObject {
         enrichmentTask?.cancel()
 
         guard !trimmed.isEmpty else {
+            peopleTask?.cancel()
             allResults = []
+            allSections = []
             results = []
+            sections = []
+            people = []
             error = nil
             emptyStateReason = nil
             isLoading = false
@@ -159,12 +186,15 @@ class SearchViewModel: ObservableObject {
                 "search cache_hit=\(true, privacy: .public) results=\(cached.results.count, privacy: .public) complete=\(true, privacy: .public)"
             )
             allResults = cached.results
+            allSections = cached.sections
             applyFilter()
             error = nil
             emptyStateReason = cached.results.isEmpty ? cached.reason : nil
             isLoading = false
             if !cached.results.isEmpty { commitRecentSearch(trimmed) }
-            if SearchResultEnrichment.hasIncompleteLeadingResults(cached.results) {
+            searchPeople(for: trimmed, generation: generation)
+            if SearchResultEnrichment.hasIncompleteLeadingResults(cached.results)
+                || SearchResultEnrichment.hasIncompleteLeadingSections(cached.sections) {
                 enrich(cached.results, cacheKey: cacheKey, generation: generation, cacheable: true)
             }
             return
@@ -189,6 +219,8 @@ class SearchViewModel: ObservableObject {
                 self.searchTimeoutTask?.cancel()
                 let found = outcome.results
                 self.allResults = found
+                self.allSections = outcome.sections
+                self.searchPeople(for: trimmed, generation: generation)
                 if outcome.isComplete {
                     self.cache(outcome, for: cacheKey)
                 }
@@ -206,7 +238,8 @@ class SearchViewModel: ObservableObject {
                     self.error = nil
                 }
                 self.isLoading = false
-                if SearchResultEnrichment.hasIncompleteLeadingResults(found) {
+                if SearchResultEnrichment.hasIncompleteLeadingResults(found)
+                    || SearchResultEnrichment.hasIncompleteLeadingSections(outcome.sections) {
                     self.enrich(
                         found,
                         cacheKey: cacheKey,
@@ -245,20 +278,62 @@ class SearchViewModel: ObservableObject {
     @MainActor
     private func enrich(_ found: [NuvioMeta], cacheKey: String, generation: UInt64, cacheable: Bool) {
         enrichmentTask?.cancel()
+        let sourceSections = allSections
         enrichmentTask = Task { [weak self] in
             guard let self else { return }
-            let enriched = await SearchResultEnrichment.enrich(
-                found,
+            if sourceSections.isEmpty {
+                let enriched = await SearchResultEnrichment.enrich(
+                    found,
+                    repository: self.repository
+                )
+                guard !Task.isCancelled,
+                      self.searchGeneration == generation,
+                      self.normalizedQuery() == cacheKey else { return }
+                self.allResults = enriched
+                if cacheable {
+                    self.cache(CatalogSearchOutcome(results: enriched, isComplete: true), for: cacheKey)
+                }
+                self.applyFilter()
+                return
+            }
+
+            // Refresh each source row independently so the row model survives;
+            // the flat list is rebuilt from the refreshed rows with the same
+            // cross-source dedup the initial search used.
+            let enrichedSections = await SearchResultEnrichment.enrich(
+                sourceSections,
                 repository: self.repository
             )
             guard !Task.isCancelled,
                   self.searchGeneration == generation,
                   self.normalizedQuery() == cacheKey else { return }
-            self.allResults = enriched
+            self.allSections = enrichedSections
+            let flat = CinemetaCatalogRepository.deduplicatedSearchResults(
+                enrichedSections.flatMap { $0.results }
+            )
+            self.allResults = flat
             if cacheable {
-                self.cache(CatalogSearchOutcome(results: enriched, isComplete: true), for: cacheKey)
+                self.cache(
+                    CatalogSearchOutcome(results: flat, sections: enrichedSections, isComplete: true),
+                    for: cacheKey
+                )
             }
             self.applyFilter()
+        }
+    }
+
+    /// People are a TMDB lookup, not an add-on catalog, so they run beside the
+    /// catalog fan-out and never delay it. Cancelled on the next query.
+    private func searchPeople(for query: String, generation: UInt64) {
+        peopleTask?.cancel()
+        guard TmdbDetailsService.canSearchPeople else {
+            people = []
+            return
+        }
+        peopleTask = Task { [weak self] in
+            let found = await TmdbDetailsService.searchPeople(query: query, limit: 10)
+            guard let self, !Task.isCancelled, self.searchGeneration == generation else { return }
+            self.people = found
         }
     }
 
@@ -273,11 +348,30 @@ class SearchViewModel: ObservableObject {
     }
 
     private func applyFilter() {
+        let predicate: (NuvioMeta) -> Bool
         switch selectedType {
-        case .all: results = allResults
-        case .movie: results = allResults.filter { $0.type == "movie" }
-        case .series: results = allResults.filter { $0.type == "series" }
+        case .all: predicate = { _ in true }
+        case .movie: predicate = { $0.type == "movie" }
+        case .series: predicate = { $0.type == "series" }
         }
+        results = allResults.filter(predicate)
+        sections = allSections.compactMap { Self.filtered($0, where: predicate) }
+    }
+
+    private static func filtered(
+        _ section: CatalogSearchSection,
+        where predicate: (NuvioMeta) -> Bool
+    ) -> CatalogSearchSection? {
+        let items = section.results.filter(predicate)
+        guard !items.isEmpty else { return nil }
+        return CatalogSearchSection(
+            id: section.id,
+            title: section.title,
+            addonName: section.addonName,
+            catalogId: section.catalogId,
+            type: section.type,
+            results: items
+        )
     }
 
     func applyRecent(_ term: String) {
@@ -336,8 +430,12 @@ class SearchViewModel: ObservableObject {
         enrichmentTask?.cancel()
         cachedResults.removeAll()
         cacheOrder.removeAll()
+        peopleTask?.cancel()
         allResults = []
+        allSections = []
         results = []
+        sections = []
+        people = []
         error = nil
         emptyStateReason = nil
         isLoading = false

@@ -168,6 +168,76 @@ final class BoomioClientIdentity {
         presentationLock.unlock()
     }
 
+    /// Registrations currently running in this process.
+    ///
+    /// A request that was refused certless needs to know whether waiting is
+    /// worthwhile: if a launch-time re-registration is still in flight (or is
+    /// inside the edge's allow-list delay), presentation will arm shortly and
+    /// the request can be retried. If nothing will ever arm it, retrying only
+    /// burns the caller's timeout.
+    private var registrationsInFlight = 0
+
+    /// Marks a registration as started. Every call must be paired with
+    /// `endRegistration()`, including on failure and cancellation.
+    func beginRegistration() {
+        presentationLock.lock()
+        registrationsInFlight += 1
+        presentationLock.unlock()
+    }
+
+    func endRegistration() {
+        presentationLock.lock()
+        if registrationsInFlight > 0 { registrationsInFlight -= 1 }
+        presentationLock.unlock()
+    }
+
+    enum PresentationStatus {
+        /// The certificate may be presented to this host right now.
+        case armed
+        /// A registration is running, or the edge's allow-list delay has not
+        /// elapsed yet. Presenting now would be a refused handshake; waiting
+        /// is worthwhile.
+        case pending
+        /// Nothing in this process will arm presentation for this host.
+        case unarmed
+    }
+
+    func presentationStatus(for host: String) -> PresentationStatus {
+        presentationLock.lock()
+        let registered = registeredHost
+        let from = presentFrom
+        let pending = registrationsInFlight > 0
+        presentationLock.unlock()
+
+        if let registered, registered == Self.normalizedHost(host) {
+            if let from, Date() >= from { return .armed }
+            return .pending
+        }
+        return pending ? .pending : .unarmed
+    }
+
+    /// Waits until the certificate may be presented to `host`.
+    ///
+    /// Polls rather than sleeping the full delay: `markRegistered` records the
+    /// instant, so a caller that arrives late waits only what is left.
+    /// - Returns: true once presentation is armed (or was when called).
+    func waitForPresentation(for host: String, timeout: TimeInterval = 40) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while true {
+            switch presentationStatus(for: host) {
+            case .armed: return true
+            // Nothing will arm it: the request must stay certless rather than
+            // hold the caller for the whole timeout.
+            case .unarmed: return false
+            case .pending: break
+            }
+            if Date() >= deadline || Task.isCancelled {
+                return presentationStatus(for: host) == .armed
+            }
+            try? await Task.sleep(for: .seconds(1))
+        }
+    }
+
     /// Withdraws presentation for the rest of this process.
     ///
     /// Called when the edge rejected a handshake anyway — a revoked device, a

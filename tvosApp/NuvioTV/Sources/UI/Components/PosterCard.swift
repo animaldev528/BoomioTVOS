@@ -1506,6 +1506,9 @@ struct PosterGridCard: View {
     /// Forces the title/subtitle caption to render regardless of the user's
     /// global poster-labels setting (used by Search's Netflix-style grid).
     var forceShowLabels = false
+    /// Artwork override for cards whose natural artwork is not the poster: an
+    /// episode result shows its landscape still instead of the show's poster.
+    var artworkURL: String? = nil
     var onRefreshCatalog: (() -> Void)? = nil
     /// Optional directional-command hook used by grid search views to transfer
     /// focus to their keyboard controls at a grid boundary.
@@ -1545,9 +1548,11 @@ struct PosterGridCard: View {
     var body: some View {
         let cardContent = VStack(alignment: .leading, spacing: 12) {
             CachedPosterArtwork(
-                urlString: customPosterArtworkURL ?? meta.posterUrl,
+                urlString: customPosterArtworkURL ?? artworkURL ?? meta.posterUrl,
                 preloadURLString: nil,
-                fallbackURLString: customPosterArtworkURL == nil ? nil : meta.posterUrl,
+                fallbackURLString: customPosterArtworkURL == nil
+                    ? nil
+                    : (artworkURL ?? meta.posterUrl),
                 width: width,
                 height: height,
                 maximumWidth: width,
@@ -1640,6 +1645,12 @@ struct PosterGridCard: View {
     }
 
     private var subtitle: String {
+        // An episode result is one episode, not a title: "Series · 1989"
+        // would be the same caption for every tile of a show. The episode's
+        // own season/episode is the identity the viewer is choosing.
+        if let episodeSubtitle = meta.episodeTileSubtitle {
+            return episodeSubtitle
+        }
         let typeLabel = meta.type == "series"
             ? L10n.string("type_series", fallback: "Series")
             : L10n.string("type_movie", fallback: "Movie")
