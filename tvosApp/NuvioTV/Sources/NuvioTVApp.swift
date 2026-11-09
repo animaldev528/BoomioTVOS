@@ -548,6 +548,10 @@ struct ContentView: View {
     // They share the same recent-search storage key.
     @StateObject private var searchViewModel = SearchViewModel()
     @StateObject private var netflixSearchViewModel = NetflixSearchViewModel()
+    /// Which search screen is mounted, read here so a companion query is typed
+    /// into the view model the viewer can actually see. Setting it on both
+    /// would run two catalog searches per keystroke.
+    @AppStorage(SettingsKey.searchStyle) private var searchStyle = "Netflix"
     @StateObject private var libraryViewModel = LibraryViewModel()
     @StateObject private var releaseUpdateService = ReleaseUpdateService()
     @EnvironmentObject private var atvloadlyService: AtvloadlyService
@@ -2866,6 +2870,84 @@ struct ContentView: View {
                 }
                 .zIndex(3)
             }
+        }
+        // Companion (bsc) remote commands. Frames that the player scene can
+        // apply itself — transport, seeks, BACK while a player is mounted —
+        // never reach these; what lands here is search, and BACK when only the
+        // tab view or an overlay is in front. See `Core/Companion/CompanionRemote`.
+        .onReceive(companionNotification(.companionSearchRequested)) { _ in
+            openCompanionSearch()
+        }
+        .onReceive(companionNotification(.companionSearchText)) { note in
+            guard let text = note.userInfo?[CompanionRemote.searchTextKey] as? String else { return }
+            setCompanionSearchText(text)
+        }
+        .onReceive(companionNotification(.companionSearchSubmitted)) { _ in
+            submitCompanionSearch()
+        }
+        .onReceive(companionNotification(.companionBackPressed)) { _ in
+            handleCompanionBack()
+        }
+    }
+
+    // MARK: - Companion remote
+
+    private func companionNotification(_ name: Notification.Name) -> AnyPublisher<Notification, Never> {
+        NotificationCenter.default.publisher(for: name).receive(on: DispatchQueue.main).eraseToAnyPublisher()
+    }
+
+    /// True while Details, the player, or a loading overlay covers the tab
+    /// view. Companion search must not steal the screen from one of those:
+    /// BACK is how the viewer leaves them.
+    private var companionOverlayPresented: Bool {
+        if case .main = activeScreen { return false }
+        return true
+    }
+
+    /// `stealth_search`: the phone's search box is the keyboard and the mic
+    /// the TV lacks, so it needs the TV's own search screen underneath it.
+    private func openCompanionSearch() {
+        guard !companionOverlayPresented else { return }
+        selectedTab = .search
+    }
+
+    /// `keyboard_input`: the phone sends the field's whole current text on
+    /// every keystroke, so this is a replacement, not an append. Assigning to
+    /// the mounted view model's `searchText` updates the field and runs the
+    /// same debounced search a typed query would.
+    private func setCompanionSearchText(_ text: String) {
+        guard !companionOverlayPresented else { return }
+        selectedTab = .search
+        if searchStyle == "Netflix" {
+            netflixSearchViewModel.searchText = text
+        } else {
+            searchViewModel.searchText = text
+        }
+    }
+
+    /// `keyboard_submit`: run the query now instead of waiting out the
+    /// debounce, the same call the search field makes on Enter.
+    private func submitCompanionSearch() {
+        guard !companionOverlayPresented else { return }
+        if searchStyle == "Netflix" {
+            netflixSearchViewModel.performSearch(query: netflixSearchViewModel.searchText)
+        } else {
+            searchViewModel.performSearch(query: searchViewModel.searchText)
+        }
+    }
+
+    /// D-pad BACK with no player mounted: close whatever overlay is up, then
+    /// leave Search for Home — the reverse of how the viewer got there.
+    private func handleCompanionBack() {
+        // The player scene handles its own BACK (and only it knows how to
+        // close a side panel first), so a mounted player owns this press.
+        if CompanionPlayerRegistry.shared.current != nil { return }
+        if companionOverlayPresented {
+            dismissOverlay()
+            return
+        }
+        if selectedTab != .home {
+            selectedTab = .home
         }
     }
 

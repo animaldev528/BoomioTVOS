@@ -137,7 +137,13 @@ final class CompanionManager: NSObject {
             return
         }
 
-        if let socket, connectedURL == target, socket.state == .running { return }
+        // Exactly one socket for the life of the process. A launch can call
+        // `start()` several times before the first socket reaches `.running`
+        // (the task begins suspended, and SwiftUI may build the app struct
+        // more than once), and "state is not running yet" is not a reason to
+        // dial a second one — that is how an Apple TV ended up holding fifteen
+        // parallel sockets on one hub. A moved box is `reconcileOrigin`'s job.
+        if socket != nil { return }
         if reconnectTask != nil { return }
         connect(to: target)
     }
@@ -364,16 +370,89 @@ final class CompanionManager: NSObject {
             log.info("stealth_volume ignored: tvOS has no app-controllable volume")
 
         case "stealth_keyevent", "inject_keyevent":
-            // There is no tvOS equivalent of Android's
-            // `dispatchKeyEvent`-into-the-foreground-activity. Physical remote
-            // presses cannot be synthesised from an app.
-            log.info("key event ignored: tvOS cannot inject remote key events")
+            // The hub turns the phone's transport keys into their own commands
+            // (play/pause, scrub) before they reach a TV, so what is left here
+            // is the D-pad — applied by the surface in front rather than
+            // injected into the focus engine, which tvOS does not expose.
+            handleKeyEvent(frame.keyCode, player: player)
+
+        case "stealth_search":
+            // The phone's search box is the keyboard and the mic the TV lacks.
+            // Opening it here means pressing Enter on the phone is all the
+            // viewer does; the query itself arrives in `keyboard_input`.
+            CompanionRemote.post(.companionSearchRequested)
+
+        case "keyboard_input":
+            if let text = frame.text {
+                CompanionRemote.post(.companionSearchText, text: text)
+            }
+
+        case "keyboard_submit":
+            CompanionRemote.post(.companionSearchSubmitted)
 
         case "play", "iptv_tune", "audio_fork_start", "audio_fork_stop", "music_identify":
             log.info("\(frame.type, privacy: .public) is not implemented on tvOS yet")
 
         default:
             log.debug("unhandled companion command: \(frame.type, privacy: .public)")
+        }
+    }
+
+    // MARK: - D-pad
+
+    /// The key codes the phone remote sends (`CompanionKeyCodes` in
+    /// NuvioMobile), in Android's numbering.
+    private enum RemoteKey {
+        static let back = 4
+        static let dpadUp = 19
+        static let dpadDown = 20
+        static let dpadLeft = 21
+        static let dpadRight = 22
+        static let dpadCenter = 23
+        static let playPause = 85
+        /// Matches what bsc's phone relay uses for its own scrub commits, so a
+        /// D-pad seek and a phone scrub translate to the same jump on screen.
+        static let seekStepMs: Int64 = 15_000
+    }
+
+    private func handleKeyEvent(_ keyCode: Int?, player: (any CompanionPlayerControlling)?) {
+        guard let keyCode else { return }
+
+        switch keyCode {
+        case RemoteKey.back:
+            // Always posted: the player scene unwinds its own panels and then
+            // leaves, exactly as the Siri remote's Menu does; the root view
+            // acts only when no player is mounted.
+            CompanionRemote.post(.companionBackPressed)
+
+        case RemoteKey.dpadLeft, RemoteKey.dpadRight:
+            guard let player else {
+                log.debug("D-pad seek with no player on screen: ignored")
+                return
+            }
+            let snapshot = player.companionSnapshot
+            let delta = keyCode == RemoteKey.dpadLeft ? -RemoteKey.seekStepMs : RemoteKey.seekStepMs
+            var target = snapshot.positionMs + delta
+            if target < 0 { target = 0 }
+            if snapshot.durationMs > 0, target > snapshot.durationMs { target = snapshot.durationMs }
+            player.companionSeek(toMilliseconds: target)
+
+        case RemoteKey.dpadCenter, RemoteKey.playPause:
+            guard let player else {
+                log.debug("D-pad play/pause with no player on screen: ignored")
+                return
+            }
+            player.companionTogglePlayPause()
+
+        case RemoteKey.dpadUp, RemoteKey.dpadDown:
+            // Vertical D-pad would mean moving focus between controls. Apps
+            // cannot drive tvOS's focus engine from a socket, and the player
+            // has no vertical transport, so this is a visible no-op rather
+            // than a guess that moves playback by accident.
+            log.debug("D-pad up/down ignored: tvOS focus is not app-drivable")
+
+        default:
+            log.debug("unmapped remote key \(keyCode) from companion")
         }
     }
 
