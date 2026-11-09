@@ -543,6 +543,9 @@ struct ContentView: View {
     /// The card whose "More like this" screen is open. The screen case carries
     /// its identity; this carries the record the screen needs to load.
     @State private var moreLikeThisMeta: NuvioMeta?
+    /// Where "More like this" was opened from, so Back returns there instead of
+    /// dropping the viewer on Home.
+    @State private var moreLikeThisOrigin: TVScreen?
     @State private var isAddingPublicListToHome = false
     @StateObject private var titleActionBus = TitleActionBus.shared
     /// Titles to walk back through when Details opened Details ("More like
@@ -1190,7 +1193,8 @@ struct ContentView: View {
             }
         case .moreLikeThis:
             withAnimation(.easeInOut(duration: 0.24)) {
-                activeScreen = .main
+                activeScreen = moreLikeThisOrigin ?? .main
+                moreLikeThisOrigin = nil
                 moreLikeThisMeta = nil
             }
         default:
@@ -1202,6 +1206,12 @@ struct ContentView: View {
 
     /// Opens the long-press menu's "More like this" grid for one card.
     private func openMoreLikeThisScreen(for meta: NuvioMeta) {
+        // A screen opened from the screen it replaces would make Back cyclic.
+        if case .moreLikeThis = activeScreen {
+            // Keep the origin already recorded.
+        } else {
+            moreLikeThisOrigin = activeScreen
+        }
         moreLikeThisMeta = meta
         withAnimation(.easeInOut(duration: 0.24)) {
             activeScreen = .moreLikeThis(id: meta.id, type: meta.type)
@@ -2912,7 +2922,8 @@ struct ContentView: View {
                             moreLikeThisMeta = nil
                             openDetailsRoot(id: id, type: type)
                         }
-                    }
+                    },
+                    onBack: { dismissOverlay() }
                 )
                 .transition(.opacity)
                 .onDisappear {

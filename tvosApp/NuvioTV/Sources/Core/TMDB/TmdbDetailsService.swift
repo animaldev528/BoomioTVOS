@@ -257,6 +257,12 @@ enum TmdbDetailsService {
         return (ProfileSettings.current.object(forKey: SettingsKey.tmdbEnabled) as? Bool) ?? false
     }
 
+    /// Whether TMDB can answer a lookup at all. Screens that show an empty
+    /// result use this to tell "nothing matched" from "TMDB is not set up".
+    static var isConfigured: Bool {
+        isEnabled && apiKey != nil
+    }
+
     static var preferredLanguage: String {
         if let requestContext { return requestContext.language }
         return TmdbMetadataLanguage.resolvedLanguage(in: ProfileSettings.current)
@@ -499,7 +505,16 @@ enum TmdbDetailsService {
         }
         guard useMoreLikeThis else { return [] }
         guard let resolved = await resolveTmdbId(for: meta) else { return [] }
-        return await fetchRecommendations(
+        let recommendations = await fetchRecommendations(
+            tmdbId: resolved.id,
+            mediaType: resolved.mediaType,
+            limit: limit
+        )
+        guard recommendations.isEmpty else { return recommendations }
+        // "Recommendations" is empty for plenty of titles TMDB has no signal
+        // for. "Similar" is the looser list, and an empty screen is worse than
+        // a loose one.
+        return await fetchSimilar(
             tmdbId: resolved.id,
             mediaType: resolved.mediaType,
             limit: limit
@@ -1206,6 +1221,36 @@ enum TmdbDetailsService {
 
         let defaultType = mediaType == "tv" ? "series" : "movie"
         // Skip per-item IMDb lookup here for speed; CatalogRepository maps tmdb: → imdb on open.
+        return decoded.results.prefix(limit).compactMap {
+            mapDiscoverItemFast($0, defaultType: defaultType)
+        }
+    }
+
+    /// The looser sibling of `fetchRecommendations`, used when a title has no
+    /// recommendations at all.
+    private static func fetchSimilar(
+        tmdbId: Int,
+        mediaType: String,
+        limit: Int
+    ) async -> [RelatedTitle] {
+        guard let apiKey else { return [] }
+        var components = URLComponents(
+            url: apiBase.appendingPathComponent("\(mediaType)/\(tmdbId)/similar"),
+            resolvingAgainstBaseURL: false
+        )!
+        components.queryItems = [
+            URLQueryItem(name: "api_key", value: apiKey),
+            URLQueryItem(name: "language", value: preferredLanguage)
+        ]
+        guard let url = components.url,
+              let (data, response) = try? await data(for: url),
+              let http = response as? HTTPURLResponse,
+              (200...299).contains(http.statusCode),
+              let decoded = try? JSONDecoder().decode(TmdbPagedResults.self, from: data) else {
+            return []
+        }
+
+        let defaultType = mediaType == "tv" ? "series" : "movie"
         return decoded.results.prefix(limit).compactMap {
             mapDiscoverItemFast($0, defaultType: defaultType)
         }
