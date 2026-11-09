@@ -15011,7 +15011,9 @@ private struct CollectionsSettingsSection: View {
                 onExport: exportCollections,
                 onImport: { activeSheet = .importCollections },
                 onTemplates: { activeSheet = .templates },
-                onNew: { activeSheet = .editor(nil) }
+                onNew: { activeSheet = .editor(nil) },
+                onFromTrakt: { activeSheet = .newFromTrakt },
+                onFromMdbList: { activeSheet = .newFromMdbList }
             )
 
             if collections.isEmpty {
@@ -15116,6 +15118,18 @@ private struct CollectionsSettingsSection: View {
                             CollectionsStore.saveLocalEdit(collections)
                         }
                     )
+                case .newFromTrakt:
+                    CollectionTraktSourceSheet(accentColor: accentColor) { source in
+                        CollectionQuickAdd.addList(source: source, fallbackTitle: "Trakt List")
+                        reloadPlacement()
+                        showToast((source["title"] as? String) ?? "Trakt List")
+                    }
+                case .newFromMdbList:
+                    CollectionMdbListSourceSheet(accentColor: accentColor) { source in
+                        CollectionQuickAdd.addList(source: source, fallbackTitle: "MDBList")
+                        reloadPlacement()
+                        showToast((source["title"] as? String) ?? "MDBList")
+                    }
                 }
             }
             // Let liquid glass frost over Settings instead of an opaque sheet plate.
@@ -15224,12 +15238,18 @@ private enum CollectionsSheet: Identifiable {
     case importCollections
     case templates
     case editor(Int?)
+    /// Create a whole Home collection straight from a public list, instead of
+    /// making an empty collection and then adding the list to it.
+    case newFromTrakt
+    case newFromMdbList
 
     var id: String {
         switch self {
         case .importCollections: return "import"
         case .templates: return "templates"
         case .editor(let index): return "editor-\(index.map(String.init) ?? "new")"
+        case .newFromTrakt: return "new-trakt"
+        case .newFromMdbList: return "new-mdblist"
         }
     }
 }
@@ -15248,6 +15268,8 @@ private struct CollectionsActionBar: View {
     let onImport: () -> Void
     let onTemplates: () -> Void
     let onNew: () -> Void
+    let onFromTrakt: () -> Void
+    let onFromMdbList: () -> Void
 
     var body: some View {
         HStack(spacing: 14) {
@@ -15273,6 +15295,20 @@ private struct CollectionsActionBar: View {
                 action: onTemplates
             )
             CollectionsGlassButton(
+                title: L10n.string("tvos_settings_from_trakt", fallback: "From Trakt List"),
+                systemImage: "list.bullet.rectangle.on.rectangle",
+                prominent: false,
+                disabled: false,
+                action: onFromTrakt
+            )
+            CollectionsGlassButton(
+                title: L10n.string("tvos_settings_from_mdblist", fallback: "From MDBList"),
+                systemImage: "list.bullet.rectangle",
+                prominent: false,
+                disabled: false,
+                action: onFromMdbList
+            )
+            CollectionsGlassButton(
                 title: L10n.string("tvos_settings_new_collection", fallback: "New Collection"),
                 systemImage: "plus",
                 prominent: true,
@@ -15282,6 +15318,42 @@ private struct CollectionsActionBar: View {
         }
         .padding(28)
         .frame(maxWidth: .infinity, alignment: .center)
+    }
+}
+
+/// Compact arrow for reordering a folder's sources. Disabled at the ends: tvOS
+/// keeps a disabled button visible but out of the focus chain, so the live
+/// controls are always the ones that would actually move something.
+private struct CollectionSourceMoveButton: View {
+    let systemImage: String
+    let accentColor: Color
+    let disabled: Bool
+    let action: () -> Void
+
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(.white)
+                .frame(width: 54, height: 46)
+                .background(
+                    Color.white.opacity(focused ? 0.22 : 0.08),
+                    in: RoundedRectangle(cornerRadius: 15, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 15, style: .continuous)
+                        .strokeBorder(
+                            focused ? accentColor : Color.white.opacity(0.16),
+                            lineWidth: focused ? AppFocusOutline.width : 1
+                        )
+                )
+        }
+        .buttonStyle(.plain)
+        .focused($focused)
+        .disabled(disabled)
+        .opacity(disabled ? 0.35 : 1)
     }
 }
 
@@ -17256,6 +17328,19 @@ private struct CollectionFolderEditorCard: View {
         }
     }
 
+    /// Sources render in array order, so moving one in the array is the whole
+    /// reorder — the same order Android reads back out of `sources`.
+    private func moveSource(from index: Int, by offset: Int) {
+        updateFolder { dict in
+            var list = (dict["sources"] as? [[String: Any]]) ?? []
+            let target = index + offset
+            guard list.indices.contains(index), list.indices.contains(target) else { return }
+            let moved = list.remove(at: index)
+            list.insert(moved, at: target)
+            dict["sources"] = list
+        }
+    }
+
     private func removeSource(at index: Int) {
         updateFolder { dict in
             var list = (dict["sources"] as? [[String: Any]]) ?? []
@@ -17426,6 +17511,18 @@ private struct CollectionFolderEditorCard: View {
                                     .foregroundColor(.white)
                                     .lineLimit(1)
                                 Spacer(minLength: 8)
+                                CollectionSourceMoveButton(
+                                    systemImage: "chevron.up",
+                                    accentColor: accentColor,
+                                    disabled: index == 0,
+                                    action: { moveSource(from: index, by: -1) }
+                                )
+                                CollectionSourceMoveButton(
+                                    systemImage: "chevron.down",
+                                    accentColor: accentColor,
+                                    disabled: index >= sources.count - 1,
+                                    action: { moveSource(from: index, by: 1) }
+                                )
                                 CollectionsGlassButton(
                                     title: L10n.string("tvos_settings_edit", fallback: "Edit"),
                                     systemImage: "pencil",
