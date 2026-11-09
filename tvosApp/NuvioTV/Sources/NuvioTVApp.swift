@@ -311,9 +311,15 @@ private enum DetailsReturnDestination {
 enum TVTab: Hashable, Identifiable, CaseIterable {
     case profile, home, party, search, library, calendar, settings
     case collection(CollectionHomeID)
+    /// Movies / TV / Anime, mirroring the Android client's left menu.
+    case hub(TVHubKind)
+    /// Discover when Settings → Layout & Discovery → Discover Location is
+    /// "In Sidebar"; the Search tab hosts it otherwise.
+    case discover
 
     static var allCases: [Self] {
         var tabs: [Self] = [.profile, .home]
+        tabs += TVHubKind.allCases.map { .hub($0) }
         if isWatchPartyEnabled { tabs.append(.party) }
         tabs += [.search, .library]
         if isCalendarEnabled { tabs.append(.calendar) }
@@ -342,6 +348,8 @@ enum TVTab: Hashable, Identifiable, CaseIterable {
         case .settings: return "Settings"
         case .party: return "Watch Party"
         case .collection(let id): return "Collection:\(id.key)"
+        case .hub(let kind): return "Hub:\(kind.rawValue)"
+        case .discover: return "Discover"
         }
     }
     var title: String {
@@ -354,6 +362,8 @@ enum TVTab: Hashable, Identifiable, CaseIterable {
         case .settings: return L10n.string("nav_settings", fallback: "Settings")
         case .party: return "Watch Party"
         case .collection: return L10n.string("tmdb_collections_title", fallback: "Collections")
+        case .hub(let kind): return kind.title
+        case .discover: return L10n.string("nav_discover", fallback: "Discover")
         }
     }
     var symbol: String {
@@ -366,6 +376,8 @@ enum TVTab: Hashable, Identifiable, CaseIterable {
         case .settings: return "gearshape"
         case .party: return "person.2.fill"
         case .collection: return "rectangle.stack.fill"
+        case .hub(let kind): return kind.symbol
+        case .discover: return "safari"
         }
     }
 }
@@ -4635,6 +4647,9 @@ private struct TVMainTabView: View {
         .onChange(of: showWatchPartyTab) { _, isShown in
             if !isShown, selectedTab == .party { selectedTab = .home }
         }
+        .onChange(of: discoverLocation) { _, location in
+            if location != "In Sidebar", selectedTab == .discover { selectedTab = .home }
+        }
     }
 
     /// Search screen chosen in Settings → Layout & Discovery → Search Style.
@@ -4723,6 +4738,27 @@ private struct TVMainTabView: View {
                 Image(systemName: ProfileAvatarCatalog.symbolName(for: displayedProfile?.avatarId))
             }
         }
+    }
+
+    /// Movies / TV / Anime. Keyed on the catalog revision so an add-on sync
+    /// gives the hub fresh sections instead of the previous manifest's rows.
+    private func hubTabContent(_ kind: TVHubKind) -> some View {
+        HubBrowseView(
+            kind: kind,
+            isActive: selectedTab == .hub(kind),
+            onNavigateToDetails: onNavigateToDetails,
+            onLongPressCard: onLongPressCard
+        )
+        .id("\(activeProfile?.id ?? "none"):\(homeCatalogRevision)")
+    }
+
+    private var discoverTabContent: some View {
+        DiscoverTabView(
+            isActive: selectedTab == .discover,
+            onNavigateToDetails: onNavigateToDetails,
+            onLongPressCard: onLongPressCard
+        )
+        .id(activeProfile?.id ?? "none")
     }
 
     private var homeTabContent: some View {
@@ -4855,6 +4891,11 @@ private struct TVMainTabView: View {
             homeTabContent
                 .tabItem { Label(TVTab.home.title, systemImage: TVTab.home.symbol) }
                 .tag(TVTab.home)
+            ForEach(TVHubKind.allCases) { kind in
+                hubTabContent(kind)
+                    .tabItem { Label(kind.title, systemImage: kind.symbol) }
+                    .tag(TVTab.hub(kind))
+            }
             if WatchPartyConfiguration.isEnabled && showWatchPartyTab {
                 partyTabContent
                     .tabItem { Label(TVTab.party.title, systemImage: TVTab.party.symbol) }
@@ -4863,6 +4904,11 @@ private struct TVMainTabView: View {
             searchTab
                 .tabItem { Label(TVTab.search.title, systemImage: TVTab.search.symbol) }
                 .tag(TVTab.search)
+            if discoverLocation == "In Sidebar" {
+                discoverTabContent
+                    .tabItem { Label(TVTab.discover.title, systemImage: TVTab.discover.symbol) }
+                    .tag(TVTab.discover)
+            }
             libraryTabContent
                 .tabItem { Label(TVTab.library.title, systemImage: TVTab.library.symbol) }
                 .tag(TVTab.library)
@@ -4906,6 +4952,11 @@ private struct TVMainTabView: View {
             Tab(TVTab.home.title, systemImage: TVTab.home.symbol, value: TVTab.home) {
                 homeTabContent
             }
+            ForEach(TVHubKind.allCases) { kind in
+                Tab(kind.title, systemImage: kind.symbol, value: TVTab.hub(kind)) {
+                    hubTabContent(kind)
+                }
+            }
             if WatchPartyConfiguration.isEnabled && showWatchPartyTab {
                 Tab(TVTab.party.title, systemImage: TVTab.party.symbol, value: TVTab.party) {
                     partyTabContent
@@ -4913,6 +4964,11 @@ private struct TVMainTabView: View {
             }
             Tab(TVTab.search.title, systemImage: TVTab.search.symbol, value: TVTab.search) {
                 searchTab
+            }
+            if discoverLocation == "In Sidebar" {
+                Tab(TVTab.discover.title, systemImage: TVTab.discover.symbol, value: TVTab.discover) {
+                    discoverTabContent
+                }
             }
             Tab(TVTab.library.title, systemImage: TVTab.library.symbol, value: TVTab.library) {
                 libraryTabContent
