@@ -80,4 +80,89 @@ struct CompanionInbound: Decodable {
     let text: String?
     let reason: String?
     let status: String?
+    /// `play`: the stream the phone already resolved, and what it is.
+    let url: String?
+    let title: String?
+    let imdbId: String?
+    let season: Int?
+    let episode: Int?
+    /// Milliseconds; the player's seam takes seconds.
+    let resumeFrom: Double?
+
+    /// The cast, when the frame is a usable one. `url` is the only field the
+    /// TV cannot invent, so a `play` without it is dropped rather than played
+    /// as an empty stream.
+    var playRequest: CompanionPlayRequest? {
+        guard type == "play",
+              let raw = url?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty,
+              let target = URL(string: raw),
+              target.scheme != nil
+        else { return nil }
+
+        let name = title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return CompanionPlayRequest(
+            url: target,
+            title: name?.nilWhenEmpty ?? "Boomio",
+            imdbId: imdbId?.trimmingCharacters(in: .whitespacesAndNewlines).nilWhenEmpty,
+            season: season,
+            episode: episode,
+            resumeFromMs: resumeFrom
+        )
+    }
+}
+
+/// A phone's `play` command, carried to the root view through `CompanionRemote`
+/// once the frame has been validated.
+struct CompanionPlayRequest: Equatable, Sendable {
+    let url: URL
+    let title: String
+    let imdbId: String?
+    let season: Int?
+    let episode: Int?
+    let resumeFromMs: Double?
+
+    var isSeries: Bool { season != nil }
+
+    /// The phone resolves the stream itself and hands over an already-playable
+    /// URL, so nothing here goes back to an add-on for a source. What the TV
+    /// still needs is an identity — for the player overlay, the episode line
+    /// and progress scrobbling — and the frame carries exactly that much.
+    func meta(type: String) -> NuvioMeta {
+        NuvioMeta(
+            id: imdbId ?? url.absoluteString,
+            name: title,
+            imdbId: imdbId,
+            type: type
+        )
+    }
+
+    /// The episode the phone cast, in the identity the player and the progress
+    /// stores expect (`<series id>:<season>:<episode>`). The episode's own name
+    /// is not on the wire, so the show's title stands in for it.
+    func episodeVideo(for meta: NuvioMeta) -> NuvioVideo? {
+        guard let season, let episode else { return nil }
+        return NuvioVideo(
+            id: "\(meta.streamId):\(season):\(episode)",
+            title: title,
+            season: season,
+            episode: episode
+        )
+    }
+
+    /// "S1 · E2" — the line the player shows under the title, and the one
+    /// `PlayerView.subtitleContentId` parses back into the episode identity.
+    var subtitle: String {
+        guard let season, let episode else { return "" }
+        return "S\(season) · E\(episode)"
+    }
+
+    var resumeFromSeconds: Double? {
+        guard let resumeFromMs, resumeFromMs > 0 else { return nil }
+        return resumeFromMs / 1000
+    }
+}
+
+private extension String {
+    var nilWhenEmpty: String? { isEmpty ? nil : self }
 }

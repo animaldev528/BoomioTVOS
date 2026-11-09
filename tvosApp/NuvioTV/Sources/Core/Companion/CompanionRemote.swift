@@ -33,17 +33,32 @@ extension Notification.Name {
     static let companionSearchText = Notification.Name("com.nuvio.tv.boomio.companion.search.text")
     /// `keyboard_submit`: run the query the field currently holds.
     static let companionSearchSubmitted = Notification.Name("com.nuvio.tv.boomio.companion.search.submit")
+    /// `play`: start the stream the phone cast, carried in
+    /// `userInfo[CompanionRemote.playRequestKey]`.
+    static let companionPlayRequested = Notification.Name("com.nuvio.tv.boomio.companion.play")
 }
 
 enum CompanionRemote {
     /// Key `userInfo` carries a `keyboard_input` replacement under.
     static let searchTextKey = "text"
+    /// Key `userInfo` carries a `CompanionPlayRequest` under.
+    static let playRequestKey = "play"
 
     static func post(_ name: Notification.Name, text: String? = nil) {
         NotificationCenter.default.post(
             name: name,
             object: nil,
             userInfo: text.map { [searchTextKey: $0] }
+        )
+    }
+
+    /// `play` carries a struct rather than a string, so it has its own entry
+    /// point; a phone cast is not a search replacement.
+    static func postPlay(_ request: CompanionPlayRequest) {
+        NotificationCenter.default.post(
+            name: .companionPlayRequested,
+            object: nil,
+            userInfo: [playRequestKey: request]
         )
     }
 }

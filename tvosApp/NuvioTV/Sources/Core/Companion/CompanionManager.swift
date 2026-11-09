@@ -404,7 +404,22 @@ final class CompanionManager: NSObject {
             // settles instead of waiting on a stop ack.
             send(CompanionOutbound.AudioForkStatus(status: "stopped", reason: nil))
 
-        case "play", "iptv_tune", "music_identify":
+        case "play":
+            // The phone resolved the stream and hands over a playable URL, so
+            // the cast needs no source lookup on this end: validate the frame
+            // and let the root view mount the player. A player already on
+            // screen is replaced, exactly as casting over a live title does on
+            // the other TV platforms.
+            guard let request = frame.playRequest else {
+                log.info("play frame without a usable url: ignored")
+                return
+            }
+            log.info("play from the phone: \(request.title, privacy: .public)")
+            CompanionRemote.postPlay(request)
+
+        case "iptv_tune", "music_identify":
+            // The IPTV plane is gone from the server, and music identification
+            // is a phone-side feature; the TV has nothing to tune or identify.
             log.info("\(frame.type, privacy: .public) is not implemented on tvOS yet")
 
         default:

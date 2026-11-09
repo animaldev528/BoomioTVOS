@@ -2890,12 +2890,39 @@ struct ContentView: View {
         .onReceive(companionNotification(.companionBackPressed)) { _ in
             handleCompanionBack()
         }
+        .onReceive(companionNotification(.companionPlayRequested)) { note in
+            guard let request = note.userInfo?[CompanionRemote.playRequestKey] as? CompanionPlayRequest else { return }
+            startCompanionPlayback(request)
+        }
     }
 
     // MARK: - Companion remote
 
     private func companionNotification(_ name: Notification.Name) -> AnyPublisher<Notification, Never> {
         NotificationCenter.default.publisher(for: name).receive(on: DispatchQueue.main).eraseToAnyPublisher()
+    }
+
+    /// `play`: the phone cast a title and resolved its stream, so the TV starts
+    /// the URL it was given instead of picking a source of its own. This
+    /// deliberately ignores `companionOverlayPresented` — a cast is a request
+    /// to take the screen, and the Fire/Android clients replace whatever is
+    /// playing the same way. Metadata comes from the frame (title, IMDb id,
+    /// season/episode), which is enough for the overlay, the episode line and
+    /// progress scrobbling without a metadata round trip that could stall the
+    /// cast.
+    private func startCompanionPlayback(_ request: CompanionPlayRequest) {
+        let meta = request.meta(type: request.isSeries ? "series" : "movie")
+        let episode = request.episodeVideo(for: meta)
+        playbackEpisodes = []
+        playbackCurrentEpisode = episode
+        presentPlayback(
+            url: request.url,
+            meta: meta,
+            subtitle: request.subtitle,
+            externalSubtitles: [],
+            resumeFrom: request.resumeFromSeconds,
+            origin: .main
+        )
     }
 
     /// True while Details, the player, or a loading overlay covers the tab
