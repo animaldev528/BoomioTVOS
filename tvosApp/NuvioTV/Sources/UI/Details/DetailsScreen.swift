@@ -10021,25 +10021,7 @@ struct StreamListPreview: View {
 
                 // The picker scrolls; here the cards keep their own height and the panel cuts
                 // them off, so they never squeeze into each other.
-                VStack(spacing: style.metrics.cardSpacing) {
-                    ForEach(Array(Self.samples.enumerated()), id: \.offset) { index, stream in
-                        TvStreamCard(
-                            stream: stream,
-                            presentation: TvStreamCardPresentation(stream: stream, badgeSettings: badges),
-                            style: style,
-                            previewFocused: index == 0,
-                            externalFocus: $focus,
-                            action: {}
-                        )
-                    }
-                }
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(style.metrics.panelPadding)
-                .frame(width: layout.panelWidth, height: layout.panelHeight, alignment: .top)
-                .background(Color.black.opacity(0.22), in: panelShape)
-                .background(Color.white.opacity(0.07), in: panelShape)
-                .clipShape(panelShape)
-                .overlay(panelShape.stroke(Color.white.opacity(0.12), lineWidth: 1))
+                cardsColumn(layout: layout, badges: badges, panelShape: panelShape)
             }
             .frame(width: layout.panelWidth, alignment: .topLeading)
             .offset(x: panelLeft, y: panelTop)
@@ -10054,6 +10036,35 @@ struct StreamListPreview: View {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .stroke(Color.white.opacity(0.18), lineWidth: 2)
         )
+    }
+
+    /// The preview's card column, split out of `body`: inlined, the style's
+    /// metrics multiplied into the surrounding expression past the type-checker's
+    /// budget ("unable to type-check this expression in reasonable time").
+    private func cardsColumn(
+        layout: StreamListStyle.Layout,
+        badges: StreamBadgeSettingsSnapshot,
+        panelShape: RoundedRectangle
+    ) -> some View {
+        VStack(spacing: style.metrics.cardSpacing) {
+            ForEach(Array(Self.samples.enumerated()), id: \.offset) { index, stream in
+                TvStreamCard(
+                    stream: stream,
+                    presentation: TvStreamCardPresentation(stream: stream, badgeSettings: badges),
+                    style: style,
+                    previewFocused: index == 0,
+                    externalFocus: $focus,
+                    action: {}
+                )
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(style.metrics.panelPadding)
+        .frame(width: layout.panelWidth, height: layout.panelHeight, alignment: .top)
+        .background(Color.black.opacity(0.22), in: panelShape)
+        .background(Color.white.opacity(0.07), in: panelShape)
+        .clipShape(panelShape)
+        .overlay(panelShape.stroke(Color.white.opacity(0.12), lineWidth: 1))
     }
 
     /// In place of the title's backdrop: a warm, dark gradient under the same dimming.
