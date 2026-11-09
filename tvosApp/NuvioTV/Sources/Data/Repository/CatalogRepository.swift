@@ -1090,6 +1090,17 @@ final class CinemetaCatalogRepository: CatalogRepository {
                 )
             }
 
+            // The taste host can publish the whole ribbon as ONE catalog whose
+            // items are row descriptors; expand it before loading, exactly as
+            // Android's HomeHub.kt does.
+            let homeRows = await expandedHomeRows(
+                from: eligible,
+                declaredCatalogs: manifest.catalogs ?? [],
+                base: base,
+                deletedCatalogKeys: deletedCatalogKeys,
+                manifestId: manifest.id
+            )
+
             func load(_ catalog: AddonManifestCatalog) async -> NuvioCatalog? {
                 let metadataContext = Self.metadataCacheContext
                 do {
@@ -1144,7 +1155,7 @@ final class CinemetaCatalogRepository: CatalogRepository {
             // Publish each success, then retry only this manifest's missing rows.
             var loadedForManifest = 0
             var missingForManifest: [AddonManifestCatalog] = []
-            for catalog in eligible {
+            for catalog in homeRows {
                 guard !Task.isCancelled else { break }
                 if let loaded = await load(catalog) {
                     catalogs.append(loaded)
@@ -1173,7 +1184,7 @@ final class CinemetaCatalogRepository: CatalogRepository {
 
             hadFailures = hadFailures || !missingForManifest.isEmpty
             reports.append(
-                "\(manifest.id): \(loadedForManifest)/\(eligible.count) loaded"
+                "\(manifest.id): \(loadedForManifest)/\(homeRows.count) loaded"
                     + ", \((manifest.catalogs ?? []).count) declared"
                     + ", failed \(missingForManifest.count)"
             )
@@ -1181,6 +1192,101 @@ final class CinemetaCatalogRepository: CatalogRepository {
 
         Self.homeAddonFetchDiagnostic = reports.isEmpty ? "no add-on catalogs" : reports.joined(separator: "; ")
         return (orderedAddonCatalogs(catalogs), hadFailures)
+    }
+
+    // MARK: - Home hub
+
+    /// While the taste host runs with `REC_HOME_HUB=1` it publishes the whole
+    /// Home ribbon as ONE catalog — `rec-_home` — whose items are not titles but
+    /// row descriptors: a tile's id is another catalog id in the same manifest
+    /// and its name is that row's name. Every per-row catalog is pinned
+    /// `showInHome: false` in that mode so the rows appear once instead of
+    /// twice, which is why a client that does not expand the parent sees one
+    /// row of tile cards and nothing else. Android expands it in `HomeHub.kt`;
+    /// this is the same expansion.
+    private static let recHomeHubCatalogID = "rec-_home"
+
+    /// The rows the parent catalog names, or `eligible` unchanged when there is
+    /// no parent, it stayed unreadable, or it named nothing the manifest can
+    /// serve — a parent rendered as tiles reads as a mistake, but an empty Home
+    /// is the worse failure.
+    private func expandedHomeRows(
+        from eligible: [AddonManifestCatalog],
+        declaredCatalogs: [AddonManifestCatalog],
+        base: URL,
+        deletedCatalogKeys: Set<String>,
+        manifestId: String
+    ) async -> [AddonManifestCatalog] {
+        guard let parent = eligible.first(where: { $0.id == Self.recHomeHubCatalogID }) else {
+            return eligible
+        }
+        guard let tiles = await loadHomeHubTiles(parent: parent, base: base), !tiles.isEmpty else {
+            return eligible
+        }
+        var declared: [String: AddonManifestCatalog] = [:]
+        for catalog in declaredCatalogs {
+            declared["\(catalog.type):\(catalog.id)"] = catalog
+        }
+        var rows: [AddonManifestCatalog] = []
+        for tile in tiles {
+            // The tile id names a catalog the addon already publishes, so its
+            // own descriptor is used verbatim — that carries the row's real
+            // type, extras and page size. A tile the manifest no longer lists
+            // is synthesised from the parent so the row still loads.
+            let catalog = declared["\(tile.type):\(tile.id)"] ?? AddonManifestCatalog(
+                type: tile.type,
+                id: tile.id,
+                name: tile.name
+            )
+            let settingsKey = TVHomeCatalogOrder.catalogSettingsKey(
+                addonId: manifestId,
+                contentType: catalog.type,
+                catalogId: catalog.id
+            )
+            let rowId = "addon_\(manifestId)_\(catalog.type)_\(catalog.id)"
+            if deletedCatalogKeys.contains(settingsKey) || deletedCatalogKeys.contains(rowId) {
+                continue
+            }
+            guard catalog.eligibleForCollectionSource else { continue }
+            if catalog.requiresGenre, catalog.firstGenreOption == nil { continue }
+            rows.append(catalog)
+        }
+        return rows.isEmpty ? eligible : rows
+    }
+
+    /// One row descriptor from a Home-hub parent catalog.
+    private struct HomeHubTile {
+        let id: String
+        let name: String
+        let type: String
+    }
+
+    /// The parent is the first request of a cold launch and is cached add-on
+    /// side, so a failure is the connection rather than the board: one lost
+    /// race must not decide the shape of the whole ribbon. Each attempt already
+    /// carries the repository's 8 s request timeout.
+    private func loadHomeHubTiles(
+        parent: AddonManifestCatalog,
+        base: URL
+    ) async -> [HomeHubTile]? {
+        guard let url = try? StremioCatalogURLBuilder.url(
+            baseURL: base,
+            type: parent.type,
+            catalogId: parent.id,
+            genre: nil
+        ) else { return nil }
+        for attempt in 0..<3 {
+            if attempt > 0 {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+            }
+            guard !Task.isCancelled else { return nil }
+            if let response: CinemetaCatalogResponse = try? await fetch(url) {
+                return response.metas.map {
+                    HomeHubTile(id: $0.id, name: $0.name, type: $0.type ?? parent.type)
+                }
+            }
+        }
+        return nil
     }
 
     private func orderedAddonCatalogs(_ catalogs: [NuvioCatalog]) -> [NuvioCatalog] {
@@ -3094,6 +3200,27 @@ struct AddonManifestCatalog: Decodable {
         extraRequired = try container.decodeIfPresent([String].self, forKey: .extraRequired)
         posterShape = try container.decodeIfPresent(String.self, forKey: .posterShape)
             ?? container.decodeIfPresent(String.self, forKey: .poster_shape)
+    }
+
+    /// A descriptor synthesised for a Home-hub tile that the manifest does not
+    /// publish itself (the board moved between the manifest fetch and the tile
+    /// fetch). Decoding has no memberwise counterpart, so this is it.
+    init(
+        type: String,
+        id: String,
+        name: String?,
+        showInHome: Bool? = nil,
+        extra: [AddonManifestCatalogExtra]? = nil,
+        extraRequired: [String]? = nil,
+        posterShape: String? = nil
+    ) {
+        self.type = type
+        self.id = id
+        self.name = name
+        self.showInHome = showInHome
+        self.extra = extra
+        self.extraRequired = extraRequired
+        self.posterShape = posterShape
     }
 
     /// An explicit manifest opt-out hides the row from Home. Older manifests
