@@ -369,6 +369,25 @@ final class CompanionManager: NSObject {
             // presses cannot be synthesised from an app.
             log.info("key event ignored: tvOS cannot inject remote key events")
 
+        case "stealth_search":
+            // The phone's magnifier: bring the TV's own search screen up. The
+            // query itself arrives as `keyboard_input` chunks below.
+            CompanionSearchChannel.shared.open()
+
+        case "keyboard_input":
+            // A delta — the phone clears its box after every send, so the
+            // channel accumulates. It announces the full query.
+            CompanionSearchChannel.shared.type(frame.text ?? "")
+
+        case "keyboard_submit":
+            CompanionSearchChannel.shared.submit()
+
+        case "stealth_nav":
+            // tvOS has no focus engine seam: focus follows the user's remote,
+            // and an app cannot move it from outside the view tree the way
+            // Android's `dispatchKeyEvent` does.
+            log.info("stealth_nav ignored: tvOS cannot move focus programmatically")
+
         case "play", "iptv_tune", "audio_fork_start", "audio_fork_stop", "music_identify":
             log.info("\(frame.type, privacy: .public) is not implemented on tvOS yet")
 
