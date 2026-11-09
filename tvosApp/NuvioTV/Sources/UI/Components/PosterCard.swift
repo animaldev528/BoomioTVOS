@@ -230,9 +230,19 @@ struct PosterCard: View {
     let onClick: () -> Void
 
     private let landscapeTransitionDuration: TimeInterval = 0.3
+    @AppStorage(SettingsKey.focusedPosterBackdropEnabled) private var focusedPosterBackdropEnabled = true
     @AppStorage(SettingsKey.customPosterURLPattern) private var customPosterURLPattern = ""
     @AppStorage(SettingsKey.customPosterEnabledScreens) private var customPosterEnabledScreens = "all"
+    @AppStorage(SettingsKey.continueWatchingBlurNextUp) private var continueWatchingBlurNextUp = false
+    @AppStorage(SettingsKey.blurUnwatchedEpisodes) private var blurUnwatchedEpisodes = false
+    @AppStorage(SettingsKey.hideUnwatchedEpisodeTitles) private var hideUnwatchedEpisodeTitles = false
     @State private var loadedCustomLandscapeArtworkURL: String?
+
+    private var shouldBlurNextUpArtwork: Bool {
+        (continueWatchingBlurNextUp || blurUnwatchedEpisodes)
+            && continueIsUpNext
+            && continueEpisodeArtworkURL != nil
+    }
 
     #if os(tvOS)
     @FocusState private var isFocused: Bool
@@ -404,6 +414,9 @@ struct PosterCard: View {
                 placeholderView
             }
             .frame(width: cardWidth, height: cardHeight)
+            .scaleEffect(shouldBlurNextUpArtwork ? 1.08 : 1.0)
+            .blur(radius: shouldBlurNextUpArtwork ? 16 : 0)
+            .clipped()
             #if os(tvOS)
             // Cross-fade the landscape artwork away only once the resolved
             // trailer is ready to draw, avoiding a black frame on slow links.
@@ -475,11 +488,13 @@ struct PosterCard: View {
             .shadow(color: .black.opacity(shadowOpacity), radius: shadowRadius)
 
             if showsPosterTitle {
-                Text(meta.name)
-                    .font(.system(size: effectiveHomeLayout == "Compact" ? 18 : 20, weight: showsFocusedAppearance ? .semibold : .medium))
-                    .foregroundColor(titleColor)
-                    .lineLimit(1)
-                    .frame(width: cardWidth, alignment: .leading)
+                MarqueeText(
+                    meta.name,
+                    size: effectiveHomeLayout == "Compact" ? 18 : 20, weight: showsFocusedAppearance ? .semibold : .medium,
+                    color: titleColor,
+                    isActive: showsFocusedAppearance && (!expandsToBackdrop || effectiveLandscape)
+                )
+                .frame(width: cardWidth, alignment: .leading)
             }
         }
         .frame(width: layoutWidth, height: totalCardHeight, alignment: .topLeading)
@@ -522,11 +537,8 @@ struct PosterCard: View {
                 if continueEpisodeText != nil {
                     continueLandscapeSummary
                 } else if continueProgress != nil || continueRemainingText != nil {
-                    Text(meta.name)
-                        .font(.system(size: 28, weight: .semibold))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.82)
+                    MarqueeText(meta.name, size: 28, weight: .semibold, color: .white,
+                                isActive: showsFocusedAppearance, minimumScaleFactor: 0.82)
                         .frame(maxWidth: cardWidth * 0.82, alignment: .leading)
                         .padding(EdgeInsets(top: 22, leading: 22, bottom: 54, trailing: 22))
                 } else if let logoURL = landscapeLogoURL {
@@ -553,24 +565,18 @@ struct PosterCard: View {
     private var continueLandscapeSummary: some View {
         VStack(alignment: .leading, spacing: 3) {
             if let continueEpisodeText {
-                Text(continueEpisodeText)
-                    .font(.system(size: 25, weight: .medium))
-                    .foregroundColor(.white)
-                    .lineLimit(1)
+                MarqueeText(continueEpisodeText, size: 25, weight: .medium, color: .white,
+                            isActive: showsFocusedAppearance)
             }
 
-            Text(meta.name)
-                .font(.system(size: 28, weight: .semibold))
-                .foregroundColor(.white)
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
+            MarqueeText(meta.name, size: 28, weight: .semibold, color: .white,
+                        isActive: showsFocusedAppearance, minimumScaleFactor: 0.82)
 
             if let continueEpisodeTitleText, !continueEpisodeTitleText.isEmpty {
-                Text(continueEpisodeTitleText)
-                    .font(.system(size: 23, weight: .medium))
-                    .foregroundColor(.white.opacity(0.66))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
+                if !(hideUnwatchedEpisodeTitles && continueIsUpNext) {
+                    MarqueeText(continueEpisodeTitleText, size: 23, weight: .medium, color: .white.opacity(0.66),
+                                isActive: showsFocusedAppearance, minimumScaleFactor: 0.82)
+                }
             }
         }
         .frame(maxWidth: cardWidth * 0.70, alignment: .leading)
@@ -683,6 +689,13 @@ struct PosterCard: View {
     #if os(tvOS)
     private var effectiveHomeLayout: String {
         layoutMode
+    }
+
+    /// The focused poster turns into its backdrop after a moment (Settings → Layout → Expand
+    /// Focused Poster to Backdrop, Modern layout): its title waits for the wider card and scrolls
+    /// only if it doesn't fit even there.
+    private var expandsToBackdrop: Bool {
+        focusedPosterBackdropEnabled && effectiveHomeLayout == "Modern" && !isEffectivelyAlwaysLandscape
     }
 
     private var effectivePosterLabels: Bool {
@@ -1568,10 +1581,9 @@ struct PosterGridCard: View {
 
             if posterLabels || forceShowLabels {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(meta.name)
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundColor(showsFocusedAppearance ? .white : .white.opacity(0.78))
-                        .lineLimit(1)
+                    MarqueeText(meta.name, size: 20, weight: .semibold,
+                                color: showsFocusedAppearance ? .white : .white.opacity(0.78),
+                                isActive: showsFocusedAppearance)
                     Text(subtitle)
                         .font(.system(size: 16, weight: .medium))
                         .foregroundColor(.white.opacity(0.45))

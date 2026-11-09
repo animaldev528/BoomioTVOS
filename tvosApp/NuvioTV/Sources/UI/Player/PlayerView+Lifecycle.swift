@@ -21,6 +21,8 @@ extension PlayerView {
     var layersWithLifecycle: some View {
         animatedLayers
             .onAppear {
+                // The companion hub reports whichever player is in front.
+                CompanionPlayerRegistry.shared.activate(viewModel)
                 if let partyPlayback {
                     // A changed root identity must mount a new StateObject for a new runtime.
                     guard partyPlayback.viewModel === viewModel else { return }
@@ -120,6 +122,7 @@ extension PlayerView {
                 }
             }
             .onDisappear {
+                CompanionPlayerRegistry.shared.deactivate(viewModel)
                 if let partyPlayback {
                     guard let surface = partySurface else { return }
                     partySurface = nil

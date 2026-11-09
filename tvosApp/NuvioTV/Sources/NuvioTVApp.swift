@@ -34,7 +34,13 @@ struct NuvioTVApp: App {
             let enrolment = BoomioEnrolment()
             Task { @MainActor in enrolment.resumeRegistration(plane: plane) }
         }
+        // The companion hub socket follows the same saved server as the rest of
+        // the app. Starting before onboarding is harmless: the manager watches
+        // the stored configuration and connects once a box is saved.
+        Task { @MainActor in CompanionManager.shared.start() }
         TopShelfRatingsBridge.install()
+        // Fonts added in Settings → Subtitles → Custom Fonts, registered for this app.
+        SubtitleFontLibrary.prepareAtLaunch()
         // Before launch finishes, as BGTaskScheduler requires.
         TopShelfBackgroundRefresh.register()
         let payloadMigrationKey = "nuvio.tv.migrations.largePayloadPreferences.v1"
@@ -544,6 +550,10 @@ struct ContentView: View {
     // They share the same recent-search storage key.
     @StateObject private var searchViewModel = SearchViewModel()
     @StateObject private var netflixSearchViewModel = NetflixSearchViewModel()
+    /// Which search screen is mounted, read here so a companion query is typed
+    /// into the view model the viewer can actually see. Setting it on both
+    /// would run two catalog searches per keystroke.
+    @AppStorage(SettingsKey.searchStyle) private var searchStyle = "Netflix"
     @StateObject private var libraryViewModel = LibraryViewModel()
     @StateObject private var releaseUpdateService = ReleaseUpdateService()
     @EnvironmentObject private var atvloadlyService: AtvloadlyService
@@ -2862,6 +2872,111 @@ struct ContentView: View {
                 }
                 .zIndex(3)
             }
+        }
+        // Companion (bsc) remote commands. Frames that the player scene can
+        // apply itself — transport, seeks, BACK while a player is mounted —
+        // never reach these; what lands here is search, and BACK when only the
+        // tab view or an overlay is in front. See `Core/Companion/CompanionRemote`.
+        .onReceive(companionNotification(.companionSearchRequested)) { _ in
+            openCompanionSearch()
+        }
+        .onReceive(companionNotification(.companionSearchText)) { note in
+            guard let text = note.userInfo?[CompanionRemote.searchTextKey] as? String else { return }
+            setCompanionSearchText(text)
+        }
+        .onReceive(companionNotification(.companionSearchSubmitted)) { _ in
+            submitCompanionSearch()
+        }
+        .onReceive(companionNotification(.companionBackPressed)) { _ in
+            handleCompanionBack()
+        }
+        .onReceive(companionNotification(.companionPlayRequested)) { note in
+            guard let request = note.userInfo?[CompanionRemote.playRequestKey] as? CompanionPlayRequest else { return }
+            startCompanionPlayback(request)
+        }
+    }
+
+    // MARK: - Companion remote
+
+    private func companionNotification(_ name: Notification.Name) -> AnyPublisher<Notification, Never> {
+        NotificationCenter.default.publisher(for: name).receive(on: DispatchQueue.main).eraseToAnyPublisher()
+    }
+
+    /// `play`: the phone cast a title and resolved its stream, so the TV starts
+    /// the URL it was given instead of picking a source of its own. This
+    /// deliberately ignores `companionOverlayPresented` — a cast is a request
+    /// to take the screen, and the Fire/Android clients replace whatever is
+    /// playing the same way. Metadata comes from the frame (title, IMDb id,
+    /// season/episode), which is enough for the overlay, the episode line and
+    /// progress scrobbling without a metadata round trip that could stall the
+    /// cast.
+    private func startCompanionPlayback(_ request: CompanionPlayRequest) {
+        let meta = request.meta(type: request.isSeries ? "series" : "movie")
+        let episode = request.episodeVideo(for: meta)
+        playbackEpisodes = []
+        playbackCurrentEpisode = episode
+        presentPlayback(
+            url: request.url,
+            meta: meta,
+            subtitle: request.subtitle,
+            externalSubtitles: [],
+            resumeFrom: request.resumeFromSeconds,
+            origin: .main
+        )
+    }
+
+    /// True while Details, the player, or a loading overlay covers the tab
+    /// view. Companion search must not steal the screen from one of those:
+    /// BACK is how the viewer leaves them.
+    private var companionOverlayPresented: Bool {
+        if case .main = activeScreen { return false }
+        return true
+    }
+
+    /// `stealth_search`: the phone's search box is the keyboard and the mic
+    /// the TV lacks, so it needs the TV's own search screen underneath it.
+    private func openCompanionSearch() {
+        guard !companionOverlayPresented else { return }
+        selectedTab = .search
+    }
+
+    /// `keyboard_input`: the phone sends the field's whole current text on
+    /// every keystroke, so this is a replacement, not an append. Assigning to
+    /// the mounted view model's `searchText` updates the field and runs the
+    /// same debounced search a typed query would.
+    private func setCompanionSearchText(_ text: String) {
+        guard !companionOverlayPresented else { return }
+        selectedTab = .search
+        if searchStyle == "Netflix" {
+            netflixSearchViewModel.searchText = text
+        } else {
+            searchViewModel.searchText = text
+        }
+    }
+
+    /// `keyboard_submit`: run the query now instead of waiting out the
+    /// debounce, the same call the search field makes on Enter.
+    private func submitCompanionSearch() {
+        guard !companionOverlayPresented else { return }
+        if searchStyle == "Netflix" {
+            netflixSearchViewModel.performSearch(query: netflixSearchViewModel.searchText)
+        } else {
+            searchViewModel.performSearch(query: searchViewModel.searchText)
+        }
+    }
+
+    /// D-pad BACK with no player mounted: close whatever overlay is up, then
+    /// leave Search for Home — the reverse of how the viewer got there.
+    private func handleCompanionBack() {
+        // The player scene handles its own BACK (and only it knows how to
+        // close a side panel first), so a mounted player owns this press.
+        if CompanionPlayerRegistry.shared.current != nil { return }
+        if companionOverlayPresented {
+            dismissOverlay()
+            return
+        }
+        if selectedTab != .home {
+            selectedTab = .home
         }
     }
 
@@ -11316,6 +11431,7 @@ enum TVPlayerButton: String, CaseIterable, Identifiable {
     case sources
     case subtitles
     case audio
+    case speed
 
     var id: String { rawValue }
 
@@ -11326,6 +11442,7 @@ enum TVPlayerButton: String, CaseIterable, Identifiable {
         case "sources": self = .sources
         case "subtitles": self = .subtitles
         case "audio": self = .audio
+        case "speed": self = .speed
         default: return nil
         }
     }
@@ -11342,6 +11459,8 @@ enum TVPlayerButton: String, CaseIterable, Identifiable {
             return L10n.string("tvos_settings_player_subtitles", fallback: "Subtitles Button")
         case .audio:
             return L10n.string("tvos_settings_player_audio", fallback: "Audio & Sound Button")
+        case .speed:
+            return L10n.string("tvos_settings_player_speed", fallback: "Playback Speed Button")
         }
     }
 }
@@ -11349,7 +11468,7 @@ enum TVPlayerButton: String, CaseIterable, Identifiable {
 /// Profile-scoped ordering for the player controls row.
 enum TVPlayerButtonOrder {
     static let changedNotification = Notification.Name("nuvio.tv.playerButtonOrder.changed")
-    static let defaultOrder: [TVPlayerButton] = [.pip, .episodes, .sources, .subtitles, .audio]
+    static let defaultOrder: [TVPlayerButton] = [.pip, .episodes, .sources, .subtitles, .audio, .speed]
 
     static func currentOrder(in settings: UserDefaults = ProfileSettings.current) -> [TVPlayerButton] {
         var result: [TVPlayerButton] = []
@@ -11900,9 +12019,42 @@ private struct TVHeroView: View {
     var continueItem: ContinueWatchingItem? = nil
     let onSelect: () -> Void
     @AppStorage(SettingsKey.homeLayout) private var homeLayout = "Modern"
+    @AppStorage(SettingsKey.hideUnwatchedEpisodeDescriptions) private var hideUnwatchedEpisodeDescriptions = false
+    @AppStorage(SettingsKey.hideUnwatchedEpisodeTitles) private var hideUnwatchedEpisodeTitles = false
 
     private var heroHeight: CGFloat {
         homeLayout == "Compact" ? 390 : 500
+    }
+
+    private var isContinueItemCurrentlyWatching: Bool {
+        guard let continueItem else { return false }
+        return !continueItem.isUpNextEntry
+    }
+
+    private var isContinueItemWatched: Bool {
+        guard let continueItem else { return false }
+        if continueItem.isUpNextEntry { return false }
+        if let numbers = continueItem.episodeNumbers {
+            let key = "\(numbers.season):\(numbers.episode)"
+            return WatchedStore.catalogWatchedEpisodeKeys(meta: continueItem.meta).contains(key)
+                || WatchedStore.episodeWatchCount(meta: continueItem.meta, season: numbers.season, episode: numbers.episode) > 0
+        }
+        return false
+    }
+
+    /// True if the continue item represents an unstarted/unwatched episode that should have spoilers hidden.
+    /// In-progress (currently watching) episodes and already watched episodes are never hidden.
+    private var shouldHideSpoilersForContinueItem: Bool {
+        guard let continueItem else { return false }
+        if isContinueItemCurrentlyWatching || isContinueItemWatched {
+            return false
+        }
+        return true
+    }
+
+    private var isHeroDescriptionSpoilerHidden: Bool {
+        guard hideUnwatchedEpisodeDescriptions, continueItem != nil else { return false }
+        return shouldHideSpoilersForContinueItem
     }
 
     var body: some View {
@@ -11925,13 +12077,24 @@ private struct TVHeroView: View {
             }
 
             if let description = heroDescription {
-                Text(description.wrappedEveryNWords(9))
-                    .font(.appFont(size: 24, weight: .regular))
-                    .foregroundColor(.white)
-                    .lineSpacing(3)
-                    .lineLimit(4)
-                    .frame(maxWidth: 900, alignment: .leading)
-                    .padding(.top, 4)
+                if isHeroDescriptionSpoilerHidden {
+                    Text(description)
+                        .font(.appFont(size: 24, weight: .regular))
+                        .foregroundColor(.white.opacity(0.48))
+                        .italic()
+                        .lineSpacing(3)
+                        .lineLimit(4)
+                        .frame(maxWidth: 900, alignment: .leading)
+                        .padding(.top, 4)
+                } else {
+                    Text(description.wrappedEveryNWords(9))
+                        .font(.appFont(size: 24, weight: .regular))
+                        .foregroundColor(.white)
+                        .lineSpacing(3)
+                        .lineLimit(4)
+                        .frame(maxWidth: 900, alignment: .leading)
+                        .padding(.top, 4)
+                }
             }
         }
         .foregroundColor(.white)
@@ -11944,12 +12107,19 @@ private struct TVHeroView: View {
     /// "S1 E3 · Title" for the episode in progress; nil for movies or when the
     /// entry predates episode tracking.
     private var episodeLine: String? {
-        continueItem?.episodeDisplayLine
+        guard let continueItem else { return nil }
+        if hideUnwatchedEpisodeTitles && shouldHideSpoilersForContinueItem {
+            return continueItem.episodeLabel
+        }
+        return continueItem.episodeDisplayLine
     }
 
     /// Prefer the in-progress episode's overview; fall back to the series/movie
     /// description.
     private var heroDescription: String? {
+        if hideUnwatchedEpisodeDescriptions && shouldHideSpoilersForContinueItem {
+            return L10n.string("details_spoiler_hidden_description", fallback: "Description hidden to avoid spoilers.")
+        }
         if let overview = continueItem?.episodeOverview, !overview.isEmpty {
             return overview
         }
@@ -11973,6 +12143,10 @@ extension TVHeroView: Equatable {
             && lhs.continueItem?.episodeVideo?.rating == rhs.continueItem?.episodeVideo?.rating
             && lhs.continueItem?.season == rhs.continueItem?.season
             && lhs.continueItem?.episode == rhs.continueItem?.episode
+            && lhs.continueItem?.episodeOverview == rhs.continueItem?.episodeOverview
+            && lhs.continueItem?.isUpNext == rhs.continueItem?.isUpNext
+            && lhs.hideUnwatchedEpisodeDescriptions == rhs.hideUnwatchedEpisodeDescriptions
+            && lhs.hideUnwatchedEpisodeTitles == rhs.hideUnwatchedEpisodeTitles
     }
 }
 

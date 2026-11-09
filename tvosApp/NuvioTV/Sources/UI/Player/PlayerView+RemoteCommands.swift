@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 extension PlayerView {
     var layersWithRemoteCommands: some View {
@@ -18,6 +19,16 @@ extension PlayerView {
                 viewModel.togglePlayPause()
             }
             .onExitCommand(perform: handleRemoteBack)
+            // The phone's BACK is the Menu button. Same path on purpose: it
+            // closes a panel, then the player, in the order the screen is
+            // stacked — a companion press must never drop an open side panel
+            // or jump straight to Home.
+            .onReceive(
+                NotificationCenter.default.publisher(for: .companionBackPressed)
+                    .receive(on: DispatchQueue.main)
+            ) { _ in
+                handleRemoteBack()
+            }
     }
 
     /// Back / Menu during playback (also from the remote-gesture layer, which takes the remote).

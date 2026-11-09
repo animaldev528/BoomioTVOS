@@ -204,6 +204,10 @@ enum SettingsKey {
     static let detailsSectionOrder = "nuvio.tv.settings.layout.detailsSectionOrder"
     /// JSON `[String]` of Details page section IDs hidden from Details view.
     static let detailsSectionDisabled = "nuvio.tv.settings.layout.detailsSectionDisabled"
+    static let blurUnwatchedEpisodes = "nuvio.tv.settings.layout.blurUnwatchedEpisodes"
+    static let hideUnwatchedEpisodeDescriptions = "nuvio.tv.settings.layout.hideUnwatchedDescriptions"
+    static let hideUnwatchedEpisodeTitles = "nuvio.tv.settings.layout.hideUnwatchedTitles"
+    static let continueWatchingBlurNextUp = "nuvio.tv.settings.layout.continueWatchingBlurNextUp"
 
     static let traktConnected = "nuvio.tv.settings.integrations.traktConnected"
     static let traktClientID = "nuvio.tv.settings.integrations.traktClientID"
@@ -318,6 +322,18 @@ enum SettingsKey {
     static let showFileSizeBadges = "nuvio.tv.settings.playback.showFileSizeBadges"
     static let showAddonLogo = "nuvio.tv.settings.playback.showAddonLogo"
     static let streamBadgePlacement = "nuvio.tv.settings.playback.streamBadgePlacement"
+    static let streamListTextScale = "nuvio.tv.settings.playback.streamListTextScale"
+    static let streamListCardSize = "nuvio.tv.settings.playback.streamListCardSize"
+    static let streamListWidth = "nuvio.tv.settings.playback.streamListWidth"
+    static let streamListNameLines = "nuvio.tv.settings.playback.streamListNameLines"
+    static let streamListDescriptionLines = "nuvio.tv.settings.playback.streamListDescriptionLines"
+    static let streamListEpisodeHeader = "nuvio.tv.settings.playback.streamListEpisodeHeader"
+    static let streamListExpandFocused = "nuvio.tv.settings.playback.streamListExpandFocused"
+    static let streamListDetailSize = "nuvio.tv.settings.playback.streamListDetailSize"
+    static let streamListBadgeSize = "nuvio.tv.settings.playback.streamListBadgeSize"
+    static let streamListLogoSize = "nuvio.tv.settings.playback.streamListLogoSize"
+    static let streamListSpacing = "nuvio.tv.settings.playback.streamListSpacing"
+    static let streamListHeight = "nuvio.tv.settings.playback.streamListHeight"
     static let autoPlayNext = "nuvio.tv.settings.playback.autoPlayNext"
     static let autoPlayNextCountdown = "nuvio.tv.settings.playback.autoPlayNextCountdown"
     static let autoSkipIntro = "nuvio.tv.settings.playback.autoSkipIntro"
@@ -353,6 +369,7 @@ enum SettingsKey {
     static let playerShowSources = "nuvio.tv.settings.playback.showSources"
     static let playerShowSubtitles = "nuvio.tv.settings.playback.showSubtitles"
     static let playerShowAudio = "nuvio.tv.settings.playback.showAudio"
+    static let playerShowSpeed = "nuvio.tv.settings.playback.showSpeed"
     /// JSON `[String]` of player transport button ids in preferred order.
     static let playerButtonOrder = "nuvio.tv.settings.playback.playerButtonOrder"
     /// JSON `[String]` of InSight tab ids in preferred order.
@@ -406,11 +423,12 @@ enum SettingsKey {
         theme, bodyColor, font, language, amoled, amoledSurfaces, reduceMotion,
         homeLayout, sidebarClockFormat, gridRows, catalogAutoRefreshInterval, homeCatalogShowType, heroEnabled, heroCatalogs, fullscreenHeroBackdrop, homeHeroRatingSource, posterLabels, catalogAddonNames, landscapePosters, customPosterURLPattern, customPosterEnabledScreens, discoverLocation,
         searchStyle, preferAddonArtworkInSearch,
-        continueWatchingVisible, continueWatchingLandscape, continueWatchingSort, upNextFromFurthestEpisode, showUnairedNextUp, continueWatchingEpisodeRatings,
+        continueWatchingVisible, continueWatchingLandscape, continueWatchingSort, upNextFromFurthestEpisode, showUnairedNextUp, continueWatchingEpisodeRatings, continueWatchingBlurNextUp,
         showCalendarTab, showWatchPartyTab, homeCalendarToday, calendarFilter, calendarHideSpoilers, calendarCheckAvailability, calendarTvmazeTimes,
         cardCornerRadius, cardSize, liquidGlassCards,
         hideUnreleased, showFullDates, detailsActionsBelowInfo,
         detailsSectionOrder, detailsSectionDisabled,
+        blurUnwatchedEpisodes, hideUnwatchedEpisodeDescriptions, hideUnwatchedEpisodeTitles,
         traktConnected, traktClientID, traktClientSecret, traktRedirectURI,
         traktContinueWatchingDaysCap, traktShowMetaComments,
         traktWatchProgressSource, watchProgressSourceChosenByUser,
@@ -440,12 +458,14 @@ enum SettingsKey {
         playerEngine, trueHDSpatialAudio, preferDualLayerDolbyVision, dualLayerRoute, preferHDR10Plus, lowResUpscaling, losslessAudioBridge, trickplayServer, externalPlayer, smartStreamSelection, reuseLastLink, reuseLastLinkCacheHours, rememberLastSourceFocus, smartStreamUseTopResult, smartStreamQuality, smartSubtitleMatching,
         backgroundStreamPreFetch,
         cachedOnlyStreams, preferHardwareDecodedStreams, preserveAddonStreamOrder, streamSortOption, streamBadgeRules, showFileSizeBadges, showAddonLogo, streamBadgePlacement,
+        streamListTextScale, streamListCardSize, streamListWidth, streamListNameLines, streamListDescriptionLines, streamListEpisodeHeader, streamListExpandFocused,
+        streamListDetailSize, streamListBadgeSize, streamListLogoSize, streamListSpacing, streamListHeight,
         autoPlayNext, autoPlayNextCountdown, autoSkipIntro, autoSkipRecap, autoSkipOutro, autoSkipMovieCredits, streamAutoPlayPreferBingeGroup, streamAutoPlayReuseBingeGroup, postPlayRecommendationsEnabled, trailersEnabled, backgroundTrailersEnabled, trailerPreviewSound, trailerDelay,
         focusedPosterBackdropEnabled, focusedPosterBackdropDelay, audioLanguage,
         subtitleLanguages, subtitleLanguage, subtitleLanguageSecondary, subtitleLanguageTertiary,
         forcedSubtitles, subtitleSize, frameRateMatching, networkCache, hybridDiskCacheEnabled, hybridDiskCacheLimitGB, playbackTrackSelections, showAudioLanguages,
         externalPlayerForwardSubtitles, assOverrideMode,
-        playerShowPiP, playerShowEpisodes, playerShowSources, playerShowSubtitles, playerShowAudio, playerButtonOrder, seekPreviewEnabled, seekPreviewBeyondBuffer, seekrApiKey, seekrEnabled, showLoadingStatus,
+        playerShowPiP, playerShowEpisodes, playerShowSources, playerShowSubtitles, playerShowAudio, playerShowSpeed, playerButtonOrder, seekPreviewEnabled, seekPreviewBeyondBuffer, seekrApiKey, seekrEnabled, showLoadingStatus,
         timelineOpeningColor, timelineEndingColor, timelineSegmentsEnabled, timelineSnapEnabled,
         subtitleAutoSync, subtitleAutoSyncToleranceMs,
         audioDelayPersistEnabled, persistentAudioDelayMs,
@@ -524,11 +544,13 @@ enum SubtitleStyleKey {
     static let backgroundEnabled = "nuvio.tv.settings.subtitleStyle.backgroundEnabled"
     static let backgroundColor = "nuvio.tv.settings.subtitleStyle.backgroundColor"
     static let backgroundOpacity = "nuvio.tv.settings.subtitleStyle.backgroundOpacity"
+    static let selectedPresetID = "nuvio.tv.settings.subtitleStyle.selectedPresetID"
+    static let customPresets = "nuvio.tv.settings.subtitleStyle.customPresets"
 
     static let all = [
         fontName, textSize, bold, verticalAlignment, bottomOffset, horizontalMargin, letterSpacing,
         textColor, textOpacity, outlineEnabled, outlineColor, outlineWidth,
-        backgroundEnabled, backgroundColor, backgroundOpacity
+        backgroundEnabled, backgroundColor, backgroundOpacity, selectedPresetID, customPresets
     ]
 }
 
@@ -563,7 +585,7 @@ enum SubtitlePalette {
 /// Snapshot of the persisted subtitle appearance. Read by the player to style
 /// every libmpv session and by the settings live preview. Defaults mirror
 /// `SubtitleStyleDefaults` so a fresh install renders white, outlined captions.
-struct SubtitleStyle {
+struct SubtitleStyle: Codable, Equatable, Hashable, Sendable {
     var fontName: String = SubtitleStyleDefaults.fontName
     var textSize: Int = SubtitleStyleDefaults.textSize
     var bold: Bool = SubtitleStyleDefaults.bold
@@ -579,6 +601,42 @@ struct SubtitleStyle {
     var backgroundEnabled: Bool = SubtitleStyleDefaults.backgroundEnabled
     var backgroundColorHex: String = SubtitleStyleDefaults.backgroundColor
     var backgroundOpacity: Int = SubtitleStyleDefaults.backgroundOpacity
+
+    func applyToDefaults(_ defaults: UserDefaults = ProfileSettings.current) {
+        defaults.set(fontName, forKey: SubtitleStyleKey.fontName)
+        defaults.set(textSize, forKey: SubtitleStyleKey.textSize)
+        defaults.set(bold, forKey: SubtitleStyleKey.bold)
+        defaults.set(verticalAlignment, forKey: SubtitleStyleKey.verticalAlignment)
+        defaults.set(bottomOffset, forKey: SubtitleStyleKey.bottomOffset)
+        defaults.set(horizontalMargin, forKey: SubtitleStyleKey.horizontalMargin)
+        defaults.set(letterSpacing, forKey: SubtitleStyleKey.letterSpacing)
+        defaults.set(textColorHex, forKey: SubtitleStyleKey.textColor)
+        defaults.set(textOpacity, forKey: SubtitleStyleKey.textOpacity)
+        defaults.set(outlineEnabled, forKey: SubtitleStyleKey.outlineEnabled)
+        defaults.set(outlineColorHex, forKey: SubtitleStyleKey.outlineColor)
+        defaults.set(outlineWidth, forKey: SubtitleStyleKey.outlineWidth)
+        defaults.set(backgroundEnabled, forKey: SubtitleStyleKey.backgroundEnabled)
+        defaults.set(backgroundColorHex, forKey: SubtitleStyleKey.backgroundColor)
+        defaults.set(backgroundOpacity, forKey: SubtitleStyleKey.backgroundOpacity)
+    }
+
+    func matches(_ other: SubtitleStyle) -> Bool {
+        fontName == other.fontName
+            && textSize == other.textSize
+            && bold == other.bold
+            && verticalAlignment == other.verticalAlignment
+            && bottomOffset == other.bottomOffset
+            && horizontalMargin == other.horizontalMargin
+            && letterSpacing == other.letterSpacing
+            && textColorHex.caseInsensitiveCompare(other.textColorHex) == .orderedSame
+            && textOpacity == other.textOpacity
+            && outlineEnabled == other.outlineEnabled
+            && outlineColorHex.caseInsensitiveCompare(other.outlineColorHex) == .orderedSame
+            && outlineWidth == other.outlineWidth
+            && backgroundEnabled == other.backgroundEnabled
+            && backgroundColorHex.caseInsensitiveCompare(other.backgroundColorHex) == .orderedSame
+            && backgroundOpacity == other.backgroundOpacity
+    }
 
     static var current: SubtitleStyle {
         let defaults = ProfileSettings.current
@@ -623,6 +681,10 @@ struct SubtitleStyle {
         case "Helvetica Neue", "Trebuchet MS", "Futura", "Avenir Next", "Georgia", "Menlo", "Courier New":
             return .custom(fontName, size: size).weight(weight)
         default:
+            // A family from Custom Fonts: by its regular face, a family name alone isn't a font name.
+            if let face = SubtitleFontFaces.regularFaceName(family: fontName) {
+                return .custom(face, size: size).weight(weight)
+            }
             return .system(size: size, weight: weight, design: .default)
         }
     }
@@ -669,6 +731,289 @@ struct SubtitleStyle {
         let rgb = raw.count >= 6 ? String(raw.prefix(6)) : "FFFFFF"
         let alpha = Int((Double(min(max(opacity, 0), 100)) / 100.0 * 255.0).rounded())
         return String(format: "#%02X%@", alpha, rgb.uppercased())
+    }
+}
+
+// MARK: - Subtitle Style Presets (Apple TV Built-in & Custom)
+
+struct SubtitleStylePreset: Identifiable, Codable, Equatable, Hashable, Sendable {
+    let id: String
+    var name: String
+    var isBuiltIn: Bool
+    var style: SubtitleStyle
+
+    init(id: String, name: String, isBuiltIn: Bool = false, style: SubtitleStyle) {
+        self.id = id
+        self.name = name
+        self.isBuiltIn = isBuiltIn
+        self.style = style
+    }
+}
+
+extension SubtitleStylePreset {
+    static let transparentBackground = SubtitleStylePreset(
+        id: "appletv.transparentBackground",
+        name: L10n.string("subtitle_style_transparent_bg", fallback: "Transparent Background"),
+        isBuiltIn: true,
+        style: SubtitleStyle(
+            fontName: "System",
+            textSize: 100,
+            bold: false,
+            verticalAlignment: "Bottom",
+            bottomOffset: 20,
+            horizontalMargin: 25,
+            letterSpacing: 0,
+            textColorHex: "#FFFFFF",
+            textOpacity: 100,
+            outlineEnabled: false,
+            outlineColorHex: "#000000",
+            outlineWidth: 2,
+            backgroundEnabled: true,
+            backgroundColorHex: "#000000",
+            backgroundOpacity: 55
+        )
+    )
+
+    static let largeText = SubtitleStylePreset(
+        id: "appletv.largeText",
+        name: L10n.string("subtitle_style_large_text", fallback: "Large Text"),
+        isBuiltIn: true,
+        style: SubtitleStyle(
+            fontName: "System",
+            textSize: 135,
+            bold: true,
+            verticalAlignment: "Bottom",
+            bottomOffset: 20,
+            horizontalMargin: 25,
+            letterSpacing: 0,
+            textColorHex: "#FFFFFF",
+            textOpacity: 100,
+            outlineEnabled: false,
+            outlineColorHex: "#000000",
+            outlineWidth: 2,
+            backgroundEnabled: true,
+            backgroundColorHex: "#000000",
+            backgroundOpacity: 60
+        )
+    )
+
+    static let classic = SubtitleStylePreset(
+        id: "appletv.classic",
+        name: L10n.string("subtitle_style_classic", fallback: "Classic"),
+        isBuiltIn: true,
+        style: SubtitleStyle(
+            fontName: "System",
+            textSize: 100,
+            bold: false,
+            verticalAlignment: "Bottom",
+            bottomOffset: 20,
+            horizontalMargin: 25,
+            letterSpacing: 0,
+            textColorHex: "#FFFFFF",
+            textOpacity: 100,
+            outlineEnabled: true,
+            outlineColorHex: "#000000",
+            outlineWidth: 2,
+            backgroundEnabled: false,
+            backgroundColorHex: "#000000",
+            backgroundOpacity: 0
+        )
+    )
+
+    static let outlineText = SubtitleStylePreset(
+        id: "appletv.outlineText",
+        name: L10n.string("subtitle_style_outline_text", fallback: "Outline Text"),
+        isBuiltIn: true,
+        style: SubtitleStyle(
+            fontName: "System",
+            textSize: 105,
+            bold: true,
+            verticalAlignment: "Bottom",
+            bottomOffset: 20,
+            horizontalMargin: 25,
+            letterSpacing: 0,
+            textColorHex: "#F2C94C",
+            textOpacity: 100,
+            outlineEnabled: true,
+            outlineColorHex: "#000000",
+            outlineWidth: 4,
+            backgroundEnabled: false,
+            backgroundColorHex: "#000000",
+            backgroundOpacity: 0
+        )
+    )
+
+    static let yellowOnBlack = SubtitleStylePreset(
+        id: "appletv.yellowOnBlack",
+        name: L10n.string("subtitle_style_yellow_on_black", fallback: "Yellow on Black"),
+        isBuiltIn: true,
+        style: SubtitleStyle(
+            fontName: "System",
+            textSize: 100,
+            bold: true,
+            verticalAlignment: "Bottom",
+            bottomOffset: 20,
+            horizontalMargin: 25,
+            letterSpacing: 0,
+            textColorHex: "#F2C94C",
+            textOpacity: 100,
+            outlineEnabled: false,
+            outlineColorHex: "#000000",
+            outlineWidth: 2,
+            backgroundEnabled: true,
+            backgroundColorHex: "#000000",
+            backgroundOpacity: 75
+        )
+    )
+
+    static let solidBlack = SubtitleStylePreset(
+        id: "appletv.solidBlack",
+        name: L10n.string("subtitle_style_solid_black", fallback: "Solid Black"),
+        isBuiltIn: true,
+        style: SubtitleStyle(
+            fontName: "System",
+            textSize: 100,
+            bold: false,
+            verticalAlignment: "Bottom",
+            bottomOffset: 20,
+            horizontalMargin: 25,
+            letterSpacing: 0,
+            textColorHex: "#FFFFFF",
+            textOpacity: 100,
+            outlineEnabled: false,
+            outlineColorHex: "#000000",
+            outlineWidth: 2,
+            backgroundEnabled: true,
+            backgroundColorHex: "#000000",
+            backgroundOpacity: 100
+        )
+    )
+
+    static let appleTVPresets: [SubtitleStylePreset] = [
+        .transparentBackground,
+        .largeText,
+        .classic,
+        .outlineText,
+        .yellowOnBlack,
+        .solidBlack
+    ]
+}
+
+final class SubtitleStylePresetStore: @unchecked Sendable {
+    static let shared = SubtitleStylePresetStore()
+
+    func savedPresetID(defaults: UserDefaults = ProfileSettings.current) -> String? {
+        defaults.string(forKey: SubtitleStyleKey.selectedPresetID)
+    }
+
+    func customPresets(defaults: UserDefaults = ProfileSettings.current) -> [SubtitleStylePreset] {
+        guard let data = defaults.data(forKey: SubtitleStyleKey.customPresets) else { return [] }
+        return (try? JSONDecoder().decode([SubtitleStylePreset].self, from: data)) ?? []
+    }
+
+    func allPresets(defaults: UserDefaults = ProfileSettings.current) -> [SubtitleStylePreset] {
+        SubtitleStylePreset.appleTVPresets + customPresets(defaults: defaults)
+    }
+
+    func activePreset(for style: SubtitleStyle, defaults: UserDefaults = ProfileSettings.current) -> SubtitleStylePreset? {
+        let presets = allPresets(defaults: defaults)
+        if let exact = presets.first(where: { $0.style.matches(style) }) {
+            return exact
+        }
+        if let savedID = savedPresetID(defaults: defaults),
+           let saved = presets.first(where: { $0.id == savedID }) {
+            return saved
+        }
+        return nil
+    }
+
+    func activePresetTitle(for style: SubtitleStyle, defaults: UserDefaults = ProfileSettings.current) -> String {
+        let presets = allPresets(defaults: defaults)
+        if let exact = presets.first(where: { $0.style.matches(style) }) {
+            return exact.name
+        }
+        if let savedID = savedPresetID(defaults: defaults),
+           let saved = presets.first(where: { $0.id == savedID }) {
+            return "\(saved.name)*"
+        }
+        return L10n.string("subtitle_style_custom", fallback: "Custom")
+    }
+
+    func applyPreset(_ preset: SubtitleStylePreset, defaults: UserDefaults = ProfileSettings.current) {
+        defaults.set(preset.id, forKey: SubtitleStyleKey.selectedPresetID)
+        preset.style.applyToDefaults(defaults)
+    }
+
+    func suggestedCustomPresetName(defaults: UserDefaults = ProfileSettings.current) -> String {
+        let existing = customPresets(defaults: defaults)
+        let nextIndex = existing.count + 1
+        return "\(L10n.string("subtitle_style_custom", fallback: "Custom Style")) \(nextIndex)"
+    }
+
+    @discardableResult
+    func saveCurrentAsPreset(name: String? = nil, defaults: UserDefaults = ProfileSettings.current) -> SubtitleStylePreset {
+        var existing = customPresets(defaults: defaults)
+        let resolvedName: String
+        if let name = name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+            resolvedName = name
+        } else {
+            resolvedName = suggestedCustomPresetName(defaults: defaults)
+        }
+        let newPreset = SubtitleStylePreset(
+            id: "custom-\(UUID().uuidString)",
+            name: resolvedName,
+            isBuiltIn: false,
+            style: SubtitleStyle.current
+        )
+        existing.append(newPreset)
+        if let encoded = try? JSONEncoder().encode(existing) {
+            defaults.set(encoded, forKey: SubtitleStyleKey.customPresets)
+        }
+        defaults.set(newPreset.id, forKey: SubtitleStyleKey.selectedPresetID)
+        return newPreset
+    }
+
+    func updateCustomPresetStyle(
+        id: String,
+        style: SubtitleStyle,
+        newName: String? = nil,
+        defaults: UserDefaults = ProfileSettings.current
+    ) {
+        var existing = customPresets(defaults: defaults)
+        guard let index = existing.firstIndex(where: { $0.id == id }) else { return }
+        existing[index].style = style
+        if let newName = newName?.trimmingCharacters(in: .whitespacesAndNewlines), !newName.isEmpty {
+            existing[index].name = newName
+        }
+        if let encoded = try? JSONEncoder().encode(existing) {
+            defaults.set(encoded, forKey: SubtitleStyleKey.customPresets)
+        }
+        defaults.set(id, forKey: SubtitleStyleKey.selectedPresetID)
+        style.applyToDefaults(defaults)
+    }
+
+    func renameCustomPreset(id: String, newName: String, defaults: UserDefaults = ProfileSettings.current) {
+        var existing = customPresets(defaults: defaults)
+        guard let index = existing.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        existing[index].name = trimmed
+        if let encoded = try? JSONEncoder().encode(existing) {
+            defaults.set(encoded, forKey: SubtitleStyleKey.customPresets)
+        }
+    }
+
+    func deleteCustomPreset(id: String, defaults: UserDefaults = ProfileSettings.current) {
+        var existing = customPresets(defaults: defaults)
+        existing.removeAll { $0.id == id }
+        if let encoded = try? JSONEncoder().encode(existing) {
+            defaults.set(encoded, forKey: SubtitleStyleKey.customPresets)
+        } else {
+            defaults.removeObject(forKey: SubtitleStyleKey.customPresets)
+        }
+        if savedPresetID(defaults: defaults) == id {
+            defaults.removeObject(forKey: SubtitleStyleKey.selectedPresetID)
+        }
     }
 }
 
@@ -3369,6 +3714,237 @@ private struct SettingsFeatureSummaryCard: View {
     }
 }
 
+/// Settings → Playback → Stream List: every size of the stream list on the left, and on the
+/// right the list itself with sample streams, as it will look.
+private struct StreamListStyleEditor: View {
+    let accentColor: Color
+
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage(SettingsKey.amoled) private var amoled = false
+    @AppStorage(SettingsKey.bodyColor) private var bodyColor = SettingsBackground.charcoal.rawValue
+
+    @AppStorage(SettingsKey.streamListTextScale) private var textScale = 100
+    @AppStorage(SettingsKey.streamListDetailSize) private var detailSize = StreamListStyle.Step.standard.rawValue
+    @AppStorage(SettingsKey.streamListBadgeSize) private var badgeSize = StreamListStyle.Step.standard.rawValue
+    @AppStorage(SettingsKey.streamListLogoSize) private var logoSize = StreamListStyle.Step.standard.rawValue
+    @AppStorage(SettingsKey.showAddonLogo) private var showAddonLogo = false
+    @AppStorage(SettingsKey.streamListCardSize) private var cardSize = StreamListStyle.CardSize.standard.rawValue
+    @AppStorage(SettingsKey.streamListSpacing) private var spacing = StreamListStyle.Spacing.standard.rawValue
+    @AppStorage(SettingsKey.streamListWidth) private var width = StreamListStyle.Width.standard.rawValue
+    @AppStorage(SettingsKey.streamListHeight) private var height = StreamListStyle.Height.standard.rawValue
+    @AppStorage(SettingsKey.streamListEpisodeHeader) private var episodeHeader = true
+    @AppStorage(SettingsKey.streamListNameLines) private var nameLines = 2
+    @AppStorage(SettingsKey.streamListDescriptionLines) private var descriptionLines = 6
+    @AppStorage(SettingsKey.streamListExpandFocused) private var expandFocused = false
+
+    private var style: StreamListStyle {
+        StreamListStyle(
+            textScale: textScale, cardSize: cardSize, width: width,
+            nameLines: nameLines, descriptionLines: descriptionLines,
+            episodeHeader: episodeHeader, expandFocused: expandFocused,
+            detailSize: detailSize, badgeSize: badgeSize, logoSize: logoSize,
+            spacing: spacing, height: height)
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            let previewWidth = max(proxy.size.width - 64 - 640 - 48 - 64, 400)
+            ZStack(alignment: .topLeading) {
+                Color.nuvioBackground(amoled: amoled, body: bodyColor)
+                    .ignoresSafeArea()
+
+                HStack(alignment: .top, spacing: 48) {
+                    ScrollView(showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 14) {
+                            VStack(alignment: .leading, spacing: 7) {
+                                Text(L10n.string("tvos_settings_stream_list", fallback: "Stream List"))
+                                    .font(.system(size: 36, weight: .bold))
+                                    .foregroundColor(.white)
+                                Text(L10n.string("tvos_settings_stream_list_editor_subtitle", fallback: "Every change shows in the preview at once"))
+                                    .font(.system(size: 20, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.62))
+                            }
+                            .padding(.bottom, 10)
+
+                            rows
+                        }
+                        .padding(.vertical, 38)
+                    }
+                    .frame(width: 640)
+                    .focusSection()
+
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text(L10n.string("tvos_settings_stream_list_preview", fallback: "Live preview · sample streams"))
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.55))
+                        StreamListPreview(style: style, showAddonLogo: showAddonLogo, width: previewWidth)
+                    }
+                    .padding(.top, 110)
+                }
+                .padding(.horizontal, 64)
+            }
+        }
+        .onExitCommand { dismiss() }
+    }
+
+    @ViewBuilder
+    private var rows: some View {
+        SettingsOptionRow(
+            title: L10n.string("tvos_settings_stream_list_text_size", fallback: "Text Size"),
+            subtitle: L10n.string("tvos_settings_stream_list_text_size_subtitle", fallback: "Everything in the list, 50 % to 150 %"),
+            selection: Binding(
+                get: { StreamListStyle.textScaleLabel(textScale) },
+                set: { textScale = StreamListStyle.textScale(fromLabel: $0) }),
+            options: StreamListStyle.textScales.map(StreamListStyle.textScaleLabel),
+            accentColor: accentColor,
+            optionLabel: { $0 }
+        )
+
+        stepRow(
+            title: L10n.string("tvos_settings_stream_list_detail_size", fallback: "Details Size"),
+            subtitle: L10n.string("tvos_settings_stream_list_detail_size_subtitle", fallback: "The file name and details against the name"),
+            value: $detailSize)
+
+        stepRow(
+            title: L10n.string("tvos_settings_stream_list_badge_size", fallback: "Badge Size"),
+            subtitle: L10n.string("tvos_settings_stream_list_badge_size_subtitle", fallback: "Imported badges and the file size"),
+            value: $badgeSize)
+
+        SettingsOptionRow(
+            title: L10n.string("tvos_settings_addon_logo", fallback: "Add-on Logo"),
+            subtitle: L10n.string("tvos_settings_stream_list_logo_subtitle", fallback: "The source add-on's logo beside each stream, and its size"),
+            selection: Binding(
+                get: { showAddonLogo ? (StreamListStyle.Step(rawValue: logoSize) ?? .standard).label : "Off" },
+                set: { label in
+                    if let step = StreamListStyle.Step.allCases.first(where: { $0.label == label }) {
+                        showAddonLogo = true
+                        logoSize = step.rawValue
+                    } else {
+                        showAddonLogo = false
+                    }
+                }),
+            options: ["Off"] + StreamListStyle.Step.allCases.map(\.label),
+            accentColor: accentColor
+        )
+
+        SettingsOptionRow(
+            title: L10n.string("tvos_settings_stream_list_card_size", fallback: "Card Size"),
+            subtitle: L10n.string("tvos_settings_stream_list_card_size_subtitle", fallback: "Compact fits more streams on screen"),
+            selection: labelBinding($cardSize, StreamListStyle.CardSize.allCases, \.label),
+            options: StreamListStyle.CardSize.allCases.map(\.label),
+            accentColor: accentColor
+        )
+
+        SettingsOptionRow(
+            title: L10n.string("tvos_settings_stream_list_spacing", fallback: "Spacing"),
+            subtitle: L10n.string("tvos_settings_stream_list_spacing_subtitle", fallback: "Space between the lines of a card"),
+            selection: labelBinding($spacing, StreamListStyle.Spacing.allCases, \.label),
+            options: StreamListStyle.Spacing.allCases.map(\.label),
+            accentColor: accentColor
+        )
+
+        SettingsOptionRow(
+            title: L10n.string("tvos_settings_stream_list_width", fallback: "List Width"),
+            subtitle: L10n.string("tvos_settings_stream_list_width_subtitle", fallback: "Wide narrows the summary, Full leaves it out"),
+            selection: labelBinding($width, StreamListStyle.Width.allCases, \.label),
+            options: StreamListStyle.Width.allCases.map(\.label),
+            accentColor: accentColor
+        )
+
+        SettingsOptionRow(
+            title: L10n.string("tvos_settings_stream_list_height", fallback: "List Height"),
+            subtitle: L10n.string("tvos_settings_stream_list_height_subtitle", fallback: "Tall and Full use more of the screen"),
+            selection: labelBinding($height, StreamListStyle.Height.allCases, \.label),
+            options: StreamListStyle.Height.allCases.map(\.label),
+            accentColor: accentColor
+        )
+
+        SettingsToggleRow(
+            title: L10n.string("tvos_settings_stream_list_episode_header", fallback: "Episode Info Above the List"),
+            subtitle: L10n.string("tvos_settings_stream_list_episode_header_subtitle", fallback: "With Full width: the logo and the episode between the add-ons and the first stream"),
+            isOn: $episodeHeader,
+            accentColor: accentColor,
+            enabled: width == StreamListStyle.Width.full.rawValue
+        )
+
+        SettingsOptionRow(
+            title: L10n.string("tvos_settings_stream_list_name_lines", fallback: "Name Lines"),
+            subtitle: L10n.string("tvos_settings_stream_list_name_lines_subtitle", fallback: "Lines of the stream name before it is cut"),
+            selection: Binding(
+                get: { StreamListStyle.linesLabel(nameLines) },
+                set: { nameLines = StreamListStyle.lines(fromLabel: $0) }),
+            options: StreamListStyle.nameLineChoices.map(StreamListStyle.linesLabel),
+            accentColor: accentColor
+        )
+
+        SettingsOptionRow(
+            title: L10n.string("tvos_settings_stream_list_description_lines", fallback: "Description Lines"),
+            subtitle: L10n.string("tvos_settings_stream_list_description_lines_subtitle", fallback: "The file name and details under it"),
+            selection: Binding(
+                get: { StreamListStyle.linesLabel(descriptionLines) },
+                set: { descriptionLines = StreamListStyle.lines(fromLabel: $0) }),
+            options: StreamListStyle.descriptionLineChoices.map(StreamListStyle.linesLabel),
+            accentColor: accentColor
+        )
+
+        SettingsToggleRow(
+            title: L10n.string("tvos_settings_stream_list_expand_focused", fallback: "Expand Focused Card (Experimental)"),
+            subtitle: L10n.string("tvos_settings_stream_list_expand_focused_subtitle", fallback: "The selected stream shows its whole name and description"),
+            isOn: $expandFocused,
+            accentColor: accentColor
+        )
+
+        SettingsActionRow(
+            title: L10n.string("tvos_settings_stream_list_reset", fallback: "Reset to Defaults"),
+            subtitle: L10n.string("tvos_settings_stream_list_reset_subtitle", fallback: "The list as it was, add-on logo off"),
+            value: L10n.string("tvos_settings_reset", fallback: "Reset"),
+            accentColor: accentColor,
+            action: reset
+        )
+    }
+
+    private func stepRow(title: String, subtitle: String, value: Binding<String>) -> some View {
+        SettingsOptionRow(
+            title: title,
+            subtitle: subtitle,
+            selection: labelBinding(value, StreamListStyle.Step.allCases, \.label),
+            options: StreamListStyle.Step.allCases.map(\.label),
+            accentColor: accentColor
+        )
+    }
+
+    /// The stored raw value shown as its label.
+    private func labelBinding<Option: RawRepresentable>(
+        _ stored: Binding<String>,
+        _ options: [Option],
+        _ label: KeyPath<Option, String>
+    ) -> Binding<String> where Option.RawValue == String {
+        Binding(
+            get: { (options.first { $0.rawValue == stored.wrappedValue } ?? options.first { $0.rawValue == "default" } ?? options[0])[keyPath: label] },
+            set: { newLabel in
+                if let option = options.first(where: { $0[keyPath: label] == newLabel }) {
+                    stored.wrappedValue = option.rawValue
+                }
+            })
+    }
+
+    private func reset() {
+        textScale = 100
+        detailSize = StreamListStyle.Step.standard.rawValue
+        badgeSize = StreamListStyle.Step.standard.rawValue
+        logoSize = StreamListStyle.Step.standard.rawValue
+        showAddonLogo = false
+        cardSize = StreamListStyle.CardSize.standard.rawValue
+        spacing = StreamListStyle.Spacing.standard.rawValue
+        width = StreamListStyle.Width.standard.rawValue
+        height = StreamListStyle.Height.standard.rawValue
+        episodeHeader = true
+        nameLines = 2
+        descriptionLines = 6
+        expandFocused = false
+    }
+}
+
 private struct SettingsFeatureSettingsSheet<Content: View>: View {
     let title: String
     let subtitle: String
@@ -3433,6 +4009,10 @@ private struct LayoutDiscoverySettingsView: View {
     @AppStorage(SettingsKey.upNextFromFurthestEpisode) private var upNextFromFurthestEpisode = true
     @AppStorage(SettingsKey.showUnairedNextUp) private var showUnairedNextUp = true
     @AppStorage(SettingsKey.continueWatchingEpisodeRatings) private var continueWatchingEpisodeRatings = true
+    @AppStorage(SettingsKey.continueWatchingBlurNextUp) private var continueWatchingBlurNextUp = false
+    @AppStorage(SettingsKey.blurUnwatchedEpisodes) private var blurUnwatchedEpisodes = false
+    @AppStorage(SettingsKey.hideUnwatchedEpisodeDescriptions) private var hideUnwatchedEpisodeDescriptions = false
+    @AppStorage(SettingsKey.hideUnwatchedEpisodeTitles) private var hideUnwatchedEpisodeTitles = false
     @AppStorage(SettingsKey.homeCalendarToday) private var homeCalendarToday = true
     @AppStorage(SettingsKey.hideUnreleased) private var hideUnreleased = false
     @AppStorage(SettingsKey.showFullDates) private var showFullDates = true
@@ -3760,6 +4340,21 @@ private struct LayoutDiscoverySettingsView: View {
                 )
                 .opacity(continueWatchingVisible ? 1 : 0.46)
                 .disabled(!continueWatchingVisible)
+
+                SettingsToggleRow(
+                    title: L10n.string(
+                        "settings_continue_watching_blur_next_up_title",
+                        fallback: "Blur Next Up Artwork"
+                    ),
+                    subtitle: L10n.string(
+                        "settings_continue_watching_blur_next_up_description",
+                        fallback: "Blur episode thumbnails in Continue Watching for episodes you haven't started yet"
+                    ),
+                    isOn: $continueWatchingBlurNextUp,
+                    accentColor: accentColor
+                )
+                .opacity(continueWatchingVisible ? 1 : 0.46)
+                .disabled(!continueWatchingVisible)
             }
 
             SettingsGroup(
@@ -3887,6 +4482,53 @@ private struct LayoutDiscoverySettingsView: View {
                 ) {
                     showingDetailsSectionsSettings = true
                 }
+            }
+
+            SettingsGroup(
+                title: L10n.string("tvos_settings_episode_spoilers", fallback: "Episode Spoilers"),
+                subtitle: L10n.string(
+                    "tvos_settings_episode_spoilers_subtitle",
+                    fallback: "Hide spoilers for unwatched episodes in Details and Player"
+                )
+            ) {
+                SettingsToggleRow(
+                    title: L10n.string(
+                        "settings_meta_blur_unwatched_episodes",
+                        fallback: "Blur Unwatched Episodes"
+                    ),
+                    subtitle: L10n.string(
+                        "settings_meta_blur_unwatched_episodes_description",
+                        fallback: "Blur episode thumbnails until watched to avoid spoilers"
+                    ),
+                    isOn: $blurUnwatchedEpisodes,
+                    accentColor: accentColor
+                )
+
+                SettingsToggleRow(
+                    title: L10n.string(
+                        "tvos_settings_hide_unwatched_descriptions",
+                        fallback: "Hide Unwatched Descriptions"
+                    ),
+                    subtitle: L10n.string(
+                        "tvos_settings_hide_unwatched_descriptions_subtitle",
+                        fallback: "Hide episode descriptions until watched to prevent plot spoilers"
+                    ),
+                    isOn: $hideUnwatchedEpisodeDescriptions,
+                    accentColor: accentColor
+                )
+
+                SettingsToggleRow(
+                    title: L10n.string(
+                        "tvos_settings_hide_unwatched_titles",
+                        fallback: "Hide Unwatched Titles"
+                    ),
+                    subtitle: L10n.string(
+                        "tvos_settings_hide_unwatched_titles_subtitle",
+                        fallback: "Replace unwatched episode titles with Episode numbers to avoid spoilers"
+                    ),
+                    isOn: $hideUnwatchedEpisodeTitles,
+                    accentColor: accentColor
+                )
             }
 
             TopShelfSettingsGroup(accentColor: accentColor)
@@ -5981,6 +6623,298 @@ private struct MdbListOptionsSheet: View {
         if !mdbListHasApiKey {
             mdbListEnabled = false
         }
+    }
+}
+
+/// Settings → Subtitles → Custom Fonts: fonts sent from another device through this Apple TV's
+/// own page, or downloaded from a link, then chosen in Font like the built-in ones.
+private struct CustomSubtitleFontsSheet: View {
+    let accentColor: Color
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
+    @AppStorage(SettingsKey.amoled) private var amoled = false
+    @AppStorage(SettingsKey.bodyColor) private var bodyColor = SettingsBackground.charcoal.rawValue
+    @AppStorage(SubtitleStyleKey.fontName) private var fontName = SubtitleStyleDefaults.fontName
+    @ObservedObject private var library = SubtitleFontLibrary.shared
+    @State private var server = SubtitleFontUploadServer()
+    @State private var serverState: SubtitleFontUploadServer.State = .stopped
+    @State private var link = ""
+    @State private var linkStatus: String?
+    @State private var linkFailed = false
+    @State private var isDownloading = false
+    @State private var selectedFont: SubtitleFont?
+    // Per Apple TV, as the fonts are.
+    @AppStorage(SubtitleFontPageKey.keepAddressKey, store: .standard) private var keepAddress = true
+
+    var body: some View {
+        ZStack {
+            Color.nuvioBackground(amoled: amoled, body: bodyColor)
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text(L10n.string("subtitle_custom_fonts", fallback: "Custom Fonts"))
+                            .font(.system(size: 36, weight: .bold))
+                            .foregroundColor(.white)
+                        Text(L10n.string(
+                            "subtitle_custom_fonts_intro",
+                            fallback: "Fonts added here can be chosen in Font. Styled (ASS) subtitles keep their own fonts, and find yours when they ask for them by name."
+                        ))
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundColor(.white.opacity(0.62))
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    SettingsGroup(
+                        title: L10n.string("subtitle_custom_fonts_add", fallback: "Add Fonts"),
+                        subtitle: L10n.string(
+                            "subtitle_custom_fonts_add_subtitle",
+                            fallback: "TTF, OTF or TTC files, or a ZIP with fonts in it"
+                        )
+                    ) {
+                        deviceUpload
+
+                        SettingsToggleRow(
+                            title: L10n.string("subtitle_custom_fonts_keep_address", fallback: "Keep the Same Address"),
+                            subtitle: L10n.string(
+                                "subtitle_custom_fonts_keep_address_subtitle",
+                                fallback: "The page keeps its address, so it can be bookmarked; off makes a new one each time"
+                            ),
+                            isOn: $keepAddress,
+                            accentColor: accentColor
+                        )
+
+                        if keepAddress {
+                            SettingsActionRow(
+                                title: L10n.string("subtitle_custom_fonts_new_address", fallback: "New Address"),
+                                subtitle: L10n.string(
+                                    "subtitle_custom_fonts_new_address_subtitle",
+                                    fallback: "A new address for the page; the old one stops working"
+                                ),
+                                value: "",
+                                accentColor: accentColor
+                            ) {
+                                server.change(key: SubtitleFontPageKey.renew())
+                            }
+                        }
+
+                        SettingsNativeTextFieldRow(
+                            title: L10n.string("subtitle_custom_fonts_link", fallback: "From a Link"),
+                            subtitle: L10n.string(
+                                "subtitle_custom_fonts_link_subtitle",
+                                fallback: "A font file or a ZIP, or a GitHub, Dropbox, Google Drive or Google Fonts link"
+                            ),
+                            placeholder: L10n.string("subtitle_custom_fonts_link_placeholder", fallback: "Type or paste a link"),
+                            text: $link,
+                            fieldWidth: 420,
+                            status: linkStatus,
+                            statusColor: linkFailed ? .red.opacity(0.9) : .green.opacity(0.9),
+                            onCommit: addLink
+                        )
+                    }
+
+                    SettingsGroup(
+                        title: L10n.string("subtitle_custom_fonts_yours", fallback: "Your Fonts"),
+                        subtitle: library.fonts.isEmpty
+                            ? L10n.string("subtitle_custom_fonts_none", fallback: "No fonts yet")
+                            : L10n.format(
+                                "subtitle_custom_fonts_total",
+                                fallback: "%@ on this Apple TV. Select a font to use or delete it.",
+                                Self.sizeText(library.totalBytes)
+                            )
+                    ) {
+                        ForEach(library.fonts) { font in
+                            CustomSubtitleFontRow(
+                                font: font,
+                                details: details(for: font),
+                                isMissing: library.isMissing(font),
+                                isChosen: font.families.contains(fontName) && !library.isMissing(font),
+                                accentColor: accentColor
+                            ) {
+                                selectedFont = font
+                            }
+                        }
+                    }
+                }
+                .frame(width: 1_000, alignment: .leading)
+                .padding(.horizontal, 52)
+                .padding(.vertical, 38)
+            }
+            .focusSection()
+        }
+        // The page for another device listens only while this screen is open and the app is in
+        // front; nothing runs in the background otherwise.
+        .onAppear(perform: startServer)
+        .onDisappear { server.stop() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background {
+                server.stop()
+            } else if phase == .active, serverState == .stopped {
+                startServer()
+            }
+        }
+        .onChange(of: keepAddress) { _, keep in
+            server.change(key: keep ? SubtitleFontPageKey.current() : SubtitleFontUploadServer.makeKey())
+        }
+        .onExitCommand { dismiss() }
+        .confirmationDialog(
+            selectedFont?.displayName ?? "",
+            isPresented: Binding(
+                get: { selectedFont != nil },
+                set: { if !$0 { selectedFont = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: selectedFont
+        ) { font in
+            if !library.isMissing(font) {
+                Button(L10n.string("subtitle_custom_fonts_use", fallback: "Use for Subtitles")) {
+                    fontName = font.family
+                }
+            }
+            Button(L10n.string("subtitle_custom_fonts_delete", fallback: "Delete"), role: .destructive) {
+                library.delete(font)
+            }
+            Button(L10n.string("action_cancel", fallback: "Cancel"), role: .cancel) {}
+        }
+    }
+
+    @ViewBuilder
+    private var deviceUpload: some View {
+        switch serverState {
+        case let .ready(url):
+            HStack(alignment: .center, spacing: 28) {
+                SettingsQRCodeCard(
+                    title: L10n.string("subtitle_custom_fonts_device", fallback: "From Another Device"),
+                    link: url.absoluteString
+                )
+                Text(L10n.string(
+                    "subtitle_custom_fonts_device_steps",
+                    fallback: "Scan the code, or type the address, on a phone, tablet or computer on the same network as this Apple TV. Choose the font files or drop them on the page; you can paste a link there too. The page works while this screen is open. With Keep the Same Address on, a bookmark of it keeps working as long as the Apple TV keeps its network address."
+                ))
+                .font(.system(size: 19, weight: .medium))
+                .foregroundColor(.white.opacity(0.7))
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.vertical, 8)
+        case .failed:
+            Text(L10n.string(
+                "subtitle_custom_fonts_device_failed",
+                fallback: "Sending from another device needs this Apple TV on your home network (Wi-Fi or Ethernet). A link still works."
+            ))
+            .font(.system(size: 19, weight: .medium))
+            .foregroundColor(.orange.opacity(0.9))
+            .fixedSize(horizontal: false, vertical: true)
+        case .starting, .stopped:
+            Text(L10n.string("subtitle_custom_fonts_device_starting", fallback: "Preparing the page for another device…"))
+                .font(.system(size: 19, weight: .medium))
+                .foregroundColor(.white.opacity(0.56))
+        }
+    }
+
+    private func startServer() {
+        server.start(
+            key: SubtitleFontPageKey.current(),
+            handler: { route, body in
+                await SubtitleFontWebAPI.respond(to: route, body: body)
+            },
+            changed: { state in
+                Task { @MainActor in serverState = state }
+            }
+        )
+    }
+
+    private func addLink() {
+        let text = link.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !isDownloading else { return }
+        isDownloading = true
+        linkFailed = false
+        linkStatus = L10n.string("subtitle_custom_fonts_downloading", fallback: "Downloading…")
+        Task { @MainActor in
+            do {
+                let added = try await library.add(link: text)
+                let names = added.map(\.displayName)
+                linkStatus = names.count == 1
+                    ? L10n.format("subtitle_custom_fonts_added_one", fallback: "Added %@", names[0])
+                    : L10n.format("subtitle_custom_fonts_added_many", fallback: "Added %@ fonts", String(names.count))
+                link = ""
+            } catch {
+                linkFailed = true
+                linkStatus = SubtitleFontError.message(for: error)
+            }
+            isDownloading = false
+        }
+    }
+
+    private func details(for font: SubtitleFont) -> String {
+        if library.isMissing(font) {
+            return L10n.string(
+                "subtitle_custom_fonts_missing",
+                fallback: "Missing: tvOS removed the file to free space. Add it again."
+            )
+        }
+        var parts = [font.family, Self.sizeText(font.bytes)]
+        if font.fullNames.count > 1 {
+            parts.append(L10n.format("subtitle_custom_fonts_styles", fallback: "%@ styles", String(font.fullNames.count)))
+        }
+        parts.append(font.link == nil
+            ? L10n.string("subtitle_custom_fonts_from_device", fallback: "sent from a device")
+            : L10n.string("subtitle_custom_fonts_from_link", fallback: "from a link"))
+        return parts.joined(separator: " · ")
+    }
+
+    static func sizeText(_ bytes: Int) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+    }
+}
+
+/// A font in Custom Fonts, its name written in itself.
+private struct CustomSubtitleFontRow: View {
+    let font: SubtitleFont
+    let details: String
+    let isMissing: Bool
+    let isChosen: Bool
+    let accentColor: Color
+    let action: () -> Void
+
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        Button(action: action) {
+            SettingsRowShell(isFocused: isFocused, accentColor: accentColor) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(font.displayName)
+                        .font(nameFont)
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Text(details)
+                        .font(.appFont(size: 17, weight: .medium))
+                        .foregroundColor(isMissing ? .orange.opacity(0.9) : .white.opacity(0.56))
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 24)
+
+                if isChosen {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundColor(accentColor)
+                }
+            }
+        }
+        .buttonStyle(PosterCardButtonStyle())
+        .focused($isFocused)
+        .focusEffectDisabledIfAvailable()
+        .entryLockable()
+    }
+
+    private var nameFont: Font {
+        guard !isMissing, let face = font.postScriptNames.first else {
+            return .appFont(size: 24, weight: .semibold)
+        }
+        return .custom(face, size: 26)
     }
 }
 
@@ -8829,6 +9763,8 @@ private struct PlaybackSettingsView: View {
     @AppStorage(SettingsKey.showFileSizeBadges) private var showFileSizeBadges = true
     @AppStorage(SettingsKey.showAddonLogo) private var showAddonLogo = false
     @AppStorage(SettingsKey.streamBadgePlacement) private var streamBadgePlacement = StreamBadgePlacement.bottom.rawValue
+    @State private var showingStreamListEditor = false
+    @State private var streamListSummary = StreamListStyle.current().summary
     @AppStorage(SettingsKey.autoPlayNext) private var autoPlayNext = true
     @AppStorage(SettingsKey.autoSkipIntro) private var autoSkipIntro = false
     @AppStorage(SettingsKey.autoSkipRecap) private var autoSkipRecap = false
@@ -8869,6 +9805,7 @@ private struct PlaybackSettingsView: View {
     @AppStorage(SettingsKey.playerShowSources) private var playerShowSources = true
     @AppStorage(SettingsKey.playerShowSubtitles) private var playerShowSubtitles = true
     @AppStorage(SettingsKey.playerShowAudio) private var playerShowAudio = true
+    @AppStorage(SettingsKey.playerShowSpeed) private var playerShowSpeed = true
     @AppStorage(SettingsKey.sceneFeatureEnabled) private var sceneFeatureEnabled = true
 
     @State private var streamBadgeURL = ""
@@ -9547,6 +10484,23 @@ private struct PlaybackSettingsView: View {
                 )
             }
 
+            SettingsFeatureSummaryCard(
+                featureName: L10n.string("tvos_settings_stream_list", fallback: "Stream List"),
+                status: streamListSummary,
+                actionSubtitle: L10n.string(
+                    "tvos_settings_stream_list_subtitle",
+                    fallback: "How the sources look when you open an episode or a film, with a live preview"
+                ),
+                accentColor: accentColor
+            ) {
+                showingStreamListEditor = true
+            }
+            .fullScreenCover(isPresented: $showingStreamListEditor, onDismiss: {
+                streamListSummary = StreamListStyle.current().summary
+            }) {
+                StreamListStyleEditor(accentColor: accentColor)
+            }
+
             SettingsGroup(
                 title: L10n.string("tvos_settings_stream_badges", fallback: "Stream Badges"),
                 subtitle: L10n.string(
@@ -9646,7 +10600,8 @@ private struct PlaybackSettingsView: View {
                     playerShowEpisodes: $playerShowEpisodes,
                     playerShowSources: $playerShowSources,
                     playerShowSubtitles: $playerShowSubtitles,
-                    playerShowAudio: $playerShowAudio
+                    playerShowAudio: $playerShowAudio,
+                    playerShowSpeed: $playerShowSpeed
                 )
             }
             .modifier(ClearPresentationBackgroundIfAvailable())
@@ -9669,7 +10624,7 @@ private struct PlaybackSettingsView: View {
     }
 
     private var visiblePlayerButtonCount: Int {
-        [playerShowPiP, playerShowEpisodes, playerShowSources, playerShowSubtitles, playerShowAudio]
+        [playerShowPiP, playerShowEpisodes, playerShowSources, playerShowSubtitles, playerShowAudio, playerShowSpeed]
             .filter { $0 }
             .count
     }
@@ -9818,6 +10773,7 @@ private struct PlayerButtonsSettingsSection: View {
     @Binding var playerShowSources: Bool
     @Binding var playerShowSubtitles: Bool
     @Binding var playerShowAudio: Bool
+    @Binding var playerShowSpeed: Bool
 
     @State private var buttons: [TVPlayerButton] = TVPlayerButtonOrder.currentOrder()
     @FocusState private var focusedButtonID: String?
@@ -9827,7 +10783,7 @@ private struct PlayerButtonsSettingsSection: View {
             title: L10n.string("tvos_settings_player_transport_controls", fallback: "Transport Controls"),
             subtitle: L10n.string(
                 "tvos_settings_player_transport_controls_subtitle",
-                fallback: "Enable and order the PiP, Episodes, Sources, Subtitles, and Audio buttons."
+                fallback: "Enable and order the PiP, Episodes, Sources, Subtitles, Audio, and Speed buttons."
             )
         ) {
             SettingsActionRow(
@@ -9918,6 +10874,7 @@ private struct PlayerButtonsSettingsSection: View {
         case .sources: return playerShowSources
         case .subtitles: return playerShowSubtitles
         case .audio: return playerShowAudio
+        case .speed: return playerShowSpeed
         }
     }
 
@@ -9928,6 +10885,7 @@ private struct PlayerButtonsSettingsSection: View {
         case .sources: playerShowSources.toggle()
         case .subtitles: playerShowSubtitles.toggle()
         case .audio: playerShowAudio.toggle()
+        case .speed: playerShowSpeed.toggle()
         }
     }
 
@@ -9943,6 +10901,8 @@ private struct PlayerButtonsSettingsSection: View {
             return L10n.string("tvos_settings_player_subtitles_subtitle", fallback: "Show the native subtitle selector button in player controls")
         case .audio:
             return L10n.string("tvos_settings_player_audio_subtitle", fallback: "Show the native audio and sound adjustments button in player controls")
+        case .speed:
+            return L10n.string("tvos_settings_player_speed_subtitle", fallback: "Show the quick playback speed button in player controls")
         }
     }
 
@@ -9952,6 +10912,7 @@ private struct PlayerButtonsSettingsSection: View {
         playerShowSources = true
         playerShowSubtitles = true
         playerShowAudio = true
+        playerShowSpeed = true
         TVPlayerButtonOrder.resetToDefaults()
         reload()
     }
@@ -10125,6 +11086,8 @@ struct SubtitleStyleEditor: View {
     let accentColor: Color
     var onChange: (() -> Void)? = nil
 
+    @ObservedObject private var fontLibrary = SubtitleFontLibrary.shared
+    @State private var showingCustomFonts = false
     @AppStorage(SubtitleStyleKey.fontName) private var fontName = SubtitleStyleDefaults.fontName
     @AppStorage(SubtitleStyleKey.textSize) private var textSize = SubtitleStyleDefaults.textSize
     @AppStorage(SubtitleStyleKey.bold) private var bold = SubtitleStyleDefaults.bold
@@ -10140,6 +11103,8 @@ struct SubtitleStyleEditor: View {
     @AppStorage(SubtitleStyleKey.backgroundEnabled) private var backgroundEnabled = SubtitleStyleDefaults.backgroundEnabled
     @AppStorage(SubtitleStyleKey.backgroundColor) private var backgroundColor = SubtitleStyleDefaults.backgroundColor
     @AppStorage(SubtitleStyleKey.backgroundOpacity) private var backgroundOpacity = SubtitleStyleDefaults.backgroundOpacity
+
+    @State private var customPresetNameDraft = ""
 
     private var style: SubtitleStyle {
         SubtitleStyle(
@@ -10182,18 +11147,178 @@ struct SubtitleStyleEditor: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onChange(of: changeToken) { _, _ in onChange?() }
+        .sheet(isPresented: $showingCustomFonts) {
+            CustomSubtitleFontsSheet(accentColor: accentColor)
+                .modifier(ClearPresentationBackgroundIfAvailable())
+        }
     }
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 22) {
+            SettingsGroup(
+                title: L10n.string("subtitle_style_presets", fallback: "Presets"),
+                subtitle: L10n.string("subtitle_style_presets_subtitle", fallback: "Choose from pre-saved styles, or create and edit your own")
+            ) {
+                SettingsOptionRow(
+                    title: L10n.string("subtitle_style_preset", fallback: "Preset Style"),
+                    subtitle: L10n.string("subtitle_style_preset_desc", fallback: "Pre-saved caption styles"),
+                    selection: Binding(
+                        get: { SubtitleStylePresetStore.shared.activePresetTitle(for: style) },
+                        set: { selectedTitle in
+                            if let preset = SubtitleStylePresetStore.shared.allPresets().first(where: { $0.name == selectedTitle }) {
+                                applyPreset(preset)
+                                if !preset.isBuiltIn {
+                                    customPresetNameDraft = preset.name
+                                }
+                            }
+                        }
+                    ),
+                    options: SubtitleStylePresetStore.shared.allPresets().map(\.name),
+                    accentColor: accentColor
+                )
+
+                SettingsNativeTextFieldRow(
+                    title: L10n.string("subtitle_style_preset_name", fallback: "Preset Name"),
+                    subtitle: L10n.string("subtitle_style_preset_name_desc", fallback: "Custom name for creating or renaming a preset"),
+                    placeholder: SubtitleStylePresetStore.shared.suggestedCustomPresetName(),
+                    text: $customPresetNameDraft
+                )
+
+                SettingsActionRow(
+                    title: L10n.string("subtitle_style_save_preset", fallback: "Save Current Style as New Preset"),
+                    subtitle: L10n.string("subtitle_style_save_preset_desc", fallback: "Create a new preset with current appearance settings"),
+                    value: L10n.string("common_save", fallback: "Create"),
+                    accentColor: accentColor,
+                    action: {
+                        let name = customPresetNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                        _ = SubtitleStylePresetStore.shared.saveCurrentAsPreset(name: name.isEmpty ? nil : name)
+                        customPresetNameDraft = ""
+                        onChange?()
+                    }
+                )
+
+                if let activeCustom = SubtitleStylePresetStore.shared.activePreset(for: style), !activeCustom.isBuiltIn {
+                    SettingsActionRow(
+                        title: L10n.format("subtitle_style_update_preset", fallback: "Update '%@' with Current Style", activeCustom.name),
+                        subtitle: L10n.string("subtitle_style_update_preset_desc", fallback: "Overwrite this preset's saved appearance with the settings below"),
+                        value: L10n.string("common_update", fallback: "Update"),
+                        accentColor: accentColor,
+                        action: {
+                            let name = customPresetNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                            SubtitleStylePresetStore.shared.updateCustomPresetStyle(
+                                id: activeCustom.id,
+                                style: style,
+                                newName: name.isEmpty ? nil : name
+                            )
+                            onChange?()
+                        }
+                    )
+
+                    SettingsActionRow(
+                        title: L10n.string("subtitle_style_rename_preset", fallback: "Rename Custom Preset"),
+                        subtitle: L10n.string("subtitle_style_rename_preset_desc", fallback: "Update the name of this custom preset to the entered text above"),
+                        value: L10n.string("common_rename", fallback: "Rename"),
+                        accentColor: accentColor,
+                        action: {
+                            let name = customPresetNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !name.isEmpty {
+                                SubtitleStylePresetStore.shared.renameCustomPreset(id: activeCustom.id, newName: name)
+                                customPresetNameDraft = ""
+                                onChange?()
+                            }
+                        }
+                    )
+
+                    SettingsActionRow(
+                        title: L10n.string("subtitle_style_delete_preset", fallback: "Delete Custom Preset"),
+                        subtitle: L10n.string("subtitle_style_delete_preset_desc", fallback: "Remove this custom preset from saved styles"),
+                        value: L10n.string("common_delete", fallback: "Delete"),
+                        accentColor: .red,
+                        action: {
+                            SubtitleStylePresetStore.shared.deleteCustomPreset(id: activeCustom.id)
+                            customPresetNameDraft = ""
+                            onChange?()
+                        }
+                    )
+                }
+            }
+
+            let customPresets = SubtitleStylePresetStore.shared.customPresets()
+            if !customPresets.isEmpty {
+                SettingsGroup(
+                    title: L10n.string("subtitle_style_presets_custom", fallback: "Custom Presets"),
+                    subtitle: L10n.string("subtitle_style_presets_custom_subtitle", fallback: "Load, update, or remove your saved custom presets")
+                ) {
+                    ForEach(customPresets) { preset in
+                        let isActive = SubtitleStylePresetStore.shared.activePreset(for: style)?.id == preset.id
+                        SettingsActionRow(
+                            title: preset.name,
+                            subtitle: isActive
+                                ? L10n.string("subtitle_style_preset_active_desc", fallback: "Currently loaded in editor · Click to update with changes")
+                                : L10n.string("subtitle_style_preset_load_desc", fallback: "Click to load and edit this preset"),
+                            value: isActive
+                                ? L10n.string("common_update", fallback: "Update")
+                                : L10n.string("common_load", fallback: "Load"),
+                            accentColor: accentColor,
+                            action: {
+                                if isActive {
+                                    let name = customPresetNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    SubtitleStylePresetStore.shared.updateCustomPresetStyle(
+                                        id: preset.id,
+                                        style: style,
+                                        newName: name.isEmpty ? nil : name
+                                    )
+                                } else {
+                                    applyPreset(preset)
+                                    customPresetNameDraft = preset.name
+                                }
+                                onChange?()
+                            }
+                        )
+
+                        SettingsActionRow(
+                            title: L10n.format("subtitle_style_delete_named_preset", fallback: "Delete '%@'", preset.name),
+                            subtitle: L10n.string("subtitle_style_delete_preset_desc", fallback: "Remove this custom preset from saved styles"),
+                            value: L10n.string("common_delete", fallback: "Delete"),
+                            accentColor: .red,
+                            action: {
+                                SubtitleStylePresetStore.shared.deleteCustomPreset(id: preset.id)
+                                if customPresetNameDraft == preset.name {
+                                    customPresetNameDraft = ""
+                                }
+                                onChange?()
+                            }
+                        )
+                    }
+                }
+            }
+
             SettingsGroup(title: L10n.string("tvos_settings_text", fallback: "Text"), subtitle: L10n.string("tvos_settings_size_weight_spacing_color_and_opacity_of_4755001d", fallback: "Size, weight, spacing, color, and opacity of the caption text")) {
                 SettingsOptionRow(
                     title: L10n.string("subtitle_font", fallback: "Font"),
                     subtitle: L10n.string("subtitle_font_desc", fallback: "Typeface used for subtitles"),
                     selection: $fontName,
-                    options: SubtitleFontOption.allCases.map(\.rawValue),
-                    accentColor: accentColor
+                    options: SubtitleFontOption.allCases.map(\.rawValue) + fontLibrary.familyNames,
+                    accentColor: accentColor,
+                    optionLabel: { name in
+                        // Fonts from Custom Fonts are marked as uploaded.
+                        SubtitleFontOption(rawValue: name) == nil && fontLibrary.familyNames.contains(name)
+                            ? name + " · " + L10n.string("player_subtitle_font_uploaded", fallback: "Uploaded")
+                            : L10n.optionLabel(name)
+                    }
                 )
+
+                SettingsActionRow(
+                    title: L10n.string("subtitle_custom_fonts", fallback: "Custom Fonts"),
+                    subtitle: L10n.string(
+                        "subtitle_custom_fonts_desc",
+                        fallback: "Your own fonts, sent from a phone or computer or downloaded from a link"
+                    ),
+                    value: fontLibrary.fonts.isEmpty ? "" : "\(fontLibrary.fonts.count)",
+                    accentColor: accentColor
+                ) {
+                    showingCustomFonts = true
+                }
 
                 SettingsStepperRow(
                     title: L10n.string("tvos_settings_text_size", fallback: "Text Size"),
@@ -10356,6 +11481,26 @@ struct SubtitleStyleEditor: View {
                 )
             }
         }
+    }
+
+    private func applyPreset(_ preset: SubtitleStylePreset) {
+        fontName = preset.style.fontName
+        textSize = preset.style.textSize
+        bold = preset.style.bold
+        verticalAlignment = preset.style.verticalAlignment
+        bottomOffset = preset.style.bottomOffset
+        horizontalMargin = preset.style.horizontalMargin
+        letterSpacing = preset.style.letterSpacing
+        textColor = preset.style.textColorHex
+        textOpacity = preset.style.textOpacity
+        outlineEnabled = preset.style.outlineEnabled
+        outlineColor = preset.style.outlineColorHex
+        outlineWidth = preset.style.outlineWidth
+        backgroundEnabled = preset.style.backgroundEnabled
+        backgroundColor = preset.style.backgroundColorHex
+        backgroundOpacity = preset.style.backgroundOpacity
+        SubtitleStylePresetStore.shared.applyPreset(preset)
+        onChange?()
     }
 
     private func resetDefaults() {
@@ -15419,25 +16564,30 @@ private struct CollectionEditorSheet: View {
 
     private var isNew: Bool { existing == nil || createsNew }
 
-    /// Which source-add flow is open for a folder index (Android: Catalog / TMDB / Trakt / MDBList).
+    /// Which source-add/edit flow is open for a folder index (Android: Catalog / TMDB / Trakt / MDBList).
     private enum FolderSourcePicker: Identifiable {
         case catalogs(Int)
-        case tmdb(Int)
-        case trakt(Int)
-        case mdblist(Int)
+        case tmdb(folderIndex: Int, sourceIndex: Int?, initialSource: [String: Any]?)
+        case trakt(folderIndex: Int, sourceIndex: Int?, initialSource: [String: Any]?)
+        case mdblist(folderIndex: Int, sourceIndex: Int?, initialSource: [String: Any]?)
 
         var id: String {
             switch self {
-            case .catalogs(let i): return "catalogs-\(i)"
-            case .tmdb(let i): return "tmdb-\(i)"
-            case .trakt(let i): return "trakt-\(i)"
-            case .mdblist(let i): return "mdblist-\(i)"
+            case .catalogs(let i):
+                return "catalogs-\(i)"
+            case .tmdb(let fi, let si, _):
+                return "tmdb-\(fi)-\(si.map(String.init) ?? "new")"
+            case .trakt(let fi, let si, _):
+                return "trakt-\(fi)-\(si.map(String.init) ?? "new")"
+            case .mdblist(let fi, let si, _):
+                return "mdblist-\(fi)-\(si.map(String.init) ?? "new")"
             }
         }
 
         var folderIndex: Int {
             switch self {
-            case .catalogs(let i), .tmdb(let i), .trakt(let i), .mdblist(let i): return i
+            case .catalogs(let i): return i
+            case .tmdb(let fi, _, _), .trakt(let fi, _, _), .mdblist(let fi, _, _): return fi
             }
         }
     }
@@ -15578,9 +16728,10 @@ private struct CollectionEditorSheet: View {
                                     folder: binding(forFolderAt: index),
                                     accentColor: accentColor,
                                     onAddCatalog: { sourcePicker = .catalogs(index) },
-                                    onAddTmdb: { sourcePicker = .tmdb(index) },
-                                    onAddTrakt: { sourcePicker = .trakt(index) },
-                                    onAddMdbList: { sourcePicker = .mdblist(index) },
+                                    onAddTmdb: { sourcePicker = .tmdb(folderIndex: index, sourceIndex: nil, initialSource: nil) },
+                                    onAddTrakt: { sourcePicker = .trakt(folderIndex: index, sourceIndex: nil, initialSource: nil) },
+                                    onAddMdbList: { sourcePicker = .mdblist(folderIndex: index, sourceIndex: nil, initialSource: nil) },
+                                    onEditSource: { sourceIndex, source in editSource(source, inFolder: index, atSource: sourceIndex) },
                                     onDelete: { removeFolder(at: index) }
                                 )
                             }
@@ -15642,17 +16793,17 @@ private struct CollectionEditorSheet: View {
                     selectedIds: selectedSourceIds(at: index),
                     onToggle: { option in toggleSource(option, at: index) }
                 )
-            case .tmdb(let index):
-                CollectionTmdbSourceSheet(accentColor: accentColor) { payload in
-                    appendSource(payload, at: index)
+            case .tmdb(let folderIndex, let sourceIndex, let initial):
+                CollectionTmdbSourceSheet(accentColor: accentColor, initialSource: initial) { payload in
+                    saveSource(payload, inFolder: folderIndex, atSource: sourceIndex)
                 }
-            case .trakt(let index):
-                CollectionTraktSourceSheet(accentColor: accentColor) { payload in
-                    appendSource(payload, at: index)
+            case .trakt(let folderIndex, let sourceIndex, let initial):
+                CollectionTraktSourceSheet(accentColor: accentColor, initialSource: initial) { payload in
+                    saveSource(payload, inFolder: folderIndex, atSource: sourceIndex)
                 }
-            case .mdblist(let index):
-                CollectionMdbListSourceSheet(accentColor: accentColor) { payload in
-                    appendSource(payload, at: index)
+            case .mdblist(let folderIndex, let sourceIndex, let initial):
+                CollectionMdbListSourceSheet(accentColor: accentColor, initialSource: initial) { payload in
+                    saveSource(payload, inFolder: folderIndex, atSource: sourceIndex)
                 }
             }
         }
@@ -15739,10 +16890,32 @@ private struct CollectionEditorSheet: View {
     }
 
     private func appendSource(_ source: [String: Any], at index: Int) {
-        guard folders.indices.contains(index) else { return }
-        var sources = (folders[index]["sources"] as? [[String: Any]]) ?? []
-        sources.append(source)
-        folders[index]["sources"] = sources
+        saveSource(source, inFolder: index, atSource: nil)
+    }
+
+    private func saveSource(_ source: [String: Any], inFolder folderIndex: Int, atSource sourceIndex: Int?) {
+        guard folders.indices.contains(folderIndex) else { return }
+        var sources = (folders[folderIndex]["sources"] as? [[String: Any]]) ?? []
+        if let sourceIndex, sources.indices.contains(sourceIndex) {
+            sources[sourceIndex] = source
+        } else {
+            sources.append(source)
+        }
+        folders[folderIndex]["sources"] = sources
+    }
+
+    private func editSource(_ source: [String: Any], inFolder folderIndex: Int, atSource sourceIndex: Int) {
+        let provider = (source["provider"] as? String ?? "addon").lowercased()
+        switch provider {
+        case "tmdb":
+            sourcePicker = .tmdb(folderIndex: folderIndex, sourceIndex: sourceIndex, initialSource: source)
+        case "trakt":
+            sourcePicker = .trakt(folderIndex: folderIndex, sourceIndex: sourceIndex, initialSource: source)
+        case "mdblist":
+            sourcePicker = .mdblist(folderIndex: folderIndex, sourceIndex: sourceIndex, initialSource: source)
+        default:
+            sourcePicker = .catalogs(folderIndex)
+        }
     }
 
     private func removeFolder(at index: Int) {
@@ -15941,6 +17114,7 @@ private struct CollectionFolderEditorCard: View {
     let onAddTmdb: () -> Void
     let onAddTrakt: () -> Void
     let onAddMdbList: () -> Void
+    let onEditSource: (Int, [String: Any]) -> Void
     let onDelete: () -> Void
 
     private enum CoverMode: String, CaseIterable, Identifiable {
@@ -16252,6 +17426,11 @@ private struct CollectionFolderEditorCard: View {
                                     .foregroundColor(.white)
                                     .lineLimit(1)
                                 Spacer(minLength: 8)
+                                CollectionsGlassButton(
+                                    title: L10n.string("tvos_settings_edit", fallback: "Edit"),
+                                    systemImage: "pencil",
+                                    action: { onEditSource(index, source) }
+                                )
                                 CollectionsGlassButton(
                                     title: L10n.string("tvos_settings_remove", fallback: "Remove"),
                                     systemImage: "xmark",
@@ -16703,7 +17882,8 @@ private struct CollectionCatalogPickerSheet: View {
 /// TMDB source form with custom filters — writes Android-compatible `provider: tmdb` JSON.
 private struct CollectionTmdbSourceSheet: View {
     let accentColor: Color
-    let onAdd: ([String: Any]) -> Void
+    var initialSource: [String: Any]? = nil
+    let onSave: ([String: Any]) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var titleText = ""
@@ -16718,9 +17898,88 @@ private struct CollectionTmdbSourceSheet: View {
     @State private var minRating: Double? = nil
     @State private var minVotes: Int? = nil
     @State private var releaseYearText = ""
+    @State private var releaseDateFromText = ""
+    @State private var releaseDateToText = ""
     @State private var originCountryText = ""
     @State private var keywordsText = ""
     @State private var excludedKeywordsText = ""
+
+    private var isEditing: Bool { initialSource != nil }
+
+    init(accentColor: Color, initialSource: [String: Any]? = nil, onSave: @escaping ([String: Any]) -> Void) {
+        self.accentColor = accentColor
+        self.initialSource = initialSource
+        self.onSave = onSave
+
+        let title = initialSource?["title"] as? String ?? ""
+        let sType = initialSource?["tmdbSourceType"] as? String ?? "DISCOVER"
+        let tmdbId = (initialSource?["tmdbId"] as? Int).map(String.init) ?? ""
+        let mType = initialSource?["mediaType"] as? String ?? "movie"
+        let sBy = initialSource?["sortBy"] as? String ?? "popularity.desc"
+
+        let filters = initialSource?["filters"] as? [String: Any]
+
+        var incGenres = Set<String>()
+        if let g = (filters?["withGenres"] as? String) ?? (filters?["with_genres"] as? String) {
+            incGenres = Set(g.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+        }
+        var excGenres = Set<String>()
+        if let g = (filters?["withoutGenres"] as? String) ?? (filters?["without_genres"] as? String) {
+            excGenres = Set(g.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+        }
+
+        let incLang = (filters?["withOriginalLanguage"] as? String) ?? (filters?["with_original_language"] as? String) ?? ""
+        let excLang = (filters?["withoutOriginalLanguage"] as? String) ?? (filters?["without_original_language"] as? String) ?? ""
+
+        var rating: Double? = nil
+        if let r = filters?["voteAverageGte"] as? Double ?? filters?["vote_average_gte"] as? Double {
+            rating = r
+        } else if let rStr = filters?["voteAverageGte"] as? String ?? filters?["vote_average_gte"] as? String, let r = Double(rStr) {
+            rating = r
+        }
+
+        var votes: Int? = nil
+        if let v = filters?["voteCountGte"] as? Int ?? filters?["vote_count_gte"] as? Int {
+            votes = v
+        } else if let vStr = filters?["voteCountGte"] as? String ?? filters?["vote_count_gte"] as? String, let v = Int(vStr) {
+            votes = v
+        }
+
+        let yearVal = (filters?["year"] as? Int).map(String.init)
+            ?? (filters?["year"] as? String)
+            ?? (filters?["primary_release_year"] as? String)
+            ?? ""
+        let dateFrom = (filters?["releaseDateGte"] as? String)
+            ?? (filters?["release_date_gte"] as? String)
+            ?? (filters?["primary_release_date.gte"] as? String)
+            ?? ""
+        let dateTo = (filters?["releaseDateLte"] as? String)
+            ?? (filters?["release_date_lte"] as? String)
+            ?? (filters?["primary_release_date.lte"] as? String)
+            ?? ""
+
+        let country = (filters?["withOriginCountry"] as? String) ?? (filters?["with_origin_country"] as? String) ?? ""
+        let kw = (filters?["withKeywords"] as? String) ?? (filters?["with_keywords"] as? String) ?? ""
+        let excKw = (filters?["withoutKeywords"] as? String) ?? (filters?["without_keywords"] as? String) ?? ""
+
+        _titleText = State(initialValue: title)
+        _sourceType = State(initialValue: sType)
+        _tmdbIdText = State(initialValue: tmdbId)
+        _mediaType = State(initialValue: mType)
+        _sortBy = State(initialValue: sBy)
+        _includedGenres = State(initialValue: incGenres)
+        _excludedGenres = State(initialValue: excGenres)
+        _includedLanguage = State(initialValue: incLang)
+        _excludedLanguage = State(initialValue: excLang)
+        _minRating = State(initialValue: rating)
+        _minVotes = State(initialValue: votes)
+        _releaseYearText = State(initialValue: yearVal)
+        _releaseDateFromText = State(initialValue: dateFrom)
+        _releaseDateToText = State(initialValue: dateTo)
+        _originCountryText = State(initialValue: country)
+        _keywordsText = State(initialValue: kw)
+        _excludedKeywordsText = State(initialValue: excKw)
+    }
 
     private let sourceTypes = ["DISCOVER", "COLLECTION", "COMPANY", "NETWORK", "LIST", "PERSON", "DIRECTOR"]
     private let mediaTypes = [("movie", "Movie"), ("tv", "TV")]
@@ -16809,6 +18068,16 @@ private struct CollectionTmdbSourceSheet: View {
         (1000, "1,000+")
     ]
 
+    private let datePresets: [(label: String, from: String, to: String)] = [
+        ("Any", "", ""),
+        ("2020s", "2020-01-01", ""),
+        ("2010s", "2010-01-01", "2019-12-31"),
+        ("2000s", "2000-01-01", "2009-12-31"),
+        ("1990s", "1990-01-01", "1999-12-31"),
+        ("1980s", "1980-01-01", "1989-12-31"),
+        ("Classic", "1900-01-01", "1979-12-31")
+    ]
+
     private var currentGenres: [TmdbGenreItem] {
         mediaType == "tv" ? tvGenres : movieGenres
     }
@@ -16819,8 +18088,12 @@ private struct CollectionTmdbSourceSheet: View {
 
     var body: some View {
         sourceSheetChrome(
-            title: L10n.string("tvos_settings_add_tmdb_source", fallback: "Add TMDB Source"),
-            subtitle: L10n.string("tvos_settings_attach_a_tmdb_list_collection_company_or_b80d234f", fallback: "Attach a TMDB list, collection, company, or discover query with custom filters."),
+            title: isEditing
+                ? L10n.string("tvos_settings_edit_tmdb_source", fallback: "Edit TMDB Source")
+                : L10n.string("tvos_settings_add_tmdb_source", fallback: "Add TMDB Source"),
+            subtitle: isEditing
+                ? "Update filters, sort order, and release date criteria for this TMDB catalog source."
+                : L10n.string("tvos_settings_attach_a_tmdb_list_collection_company_or_b80d234f", fallback: "Attach a TMDB list, collection, company, or discover query with custom filters."),
             scrollable: true
         ) {
             labeled(L10n.string("tvos_settings_source_title", fallback: "Title")) {
@@ -16995,10 +18268,44 @@ private struct CollectionTmdbSourceSheet: View {
                     }
                 }
 
+                labeled("Release Date Range") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 10) {
+                                ForEach(datePresets, id: \.label) { preset in
+                                    let isSelected = (preset.from.isEmpty && preset.to.isEmpty && releaseDateFromText.isEmpty && releaseDateToText.isEmpty)
+                                        || (!preset.from.isEmpty && releaseDateFromText == preset.from && (preset.to.isEmpty ? releaseDateToText.isEmpty : releaseDateToText == preset.to))
+                                    CollectionChipButton(title: preset.label, isSelected: isSelected) {
+                                        releaseDateFromText = preset.from
+                                        releaseDateToText = preset.to
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
+                        HStack(spacing: 14) {
+                            SettingsSearchStyleField(
+                                text: $releaseDateFromText,
+                                placeholder: "From date (e.g. 01 January 2000 or 2000-01-01)",
+                                height: 52,
+                                fontSize: 18,
+                                horizontalPadding: 20
+                            )
+                            SettingsSearchStyleField(
+                                text: $releaseDateToText,
+                                placeholder: "To date (e.g. 31 December 2010 or 2010-12-31)",
+                                height: 52,
+                                fontSize: 18,
+                                horizontalPadding: 20
+                            )
+                        }
+                    }
+                }
+
                 labeled("Release Year") {
                     SettingsSearchStyleField(
                         text: $releaseYearText,
-                        placeholder: "e.g. 2024 (optional)",
+                        placeholder: "e.g. 2024 (optional single year)",
                         height: 52,
                         fontSize: 18,
                         horizontalPadding: 20
@@ -17037,16 +18344,16 @@ private struct CollectionTmdbSourceSheet: View {
         } footer: {
             CollectionsGlassButton(title: L10n.string("action_cancel", fallback: "Cancel"), action: { dismiss() })
             CollectionsGlassButton(
-                title: L10n.string("tvos_settings_add", fallback: "Add"),
-                systemImage: "plus",
+                title: isEditing ? L10n.string("action_save", fallback: "Save") : L10n.string("tvos_settings_add", fallback: "Add"),
+                systemImage: isEditing ? "checkmark" : "plus",
                 prominent: true,
                 disabled: !canAdd,
-                action: add
+                action: save
             )
         }
     }
 
-    private func add() {
+    private func save() {
         let trimmedTitle = titleText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTitle.isEmpty else { return }
         var payload: [String: Any] = [
@@ -17092,6 +18399,24 @@ private struct CollectionTmdbSourceSheet: View {
             if let year = Int(releaseYearText.trimmingCharacters(in: .whitespacesAndNewlines)), year > 1880 {
                 filters["year"] = year
             }
+
+            let gte = TmdbDateNormalizer.normalize(releaseDateFromText, isEndDate: false)
+            var lte = TmdbDateNormalizer.normalize(releaseDateToText, isEndDate: true)
+            let lowerFrom = releaseDateFromText.lowercased()
+            if lte == nil && (lowerFrom.contains(" to ") || releaseDateFromText.contains(" - ") || releaseDateFromText.contains(" – ")) {
+                lte = TmdbDateNormalizer.normalize(releaseDateFromText, isEndDate: true)
+            }
+            if let gte, !gte.isEmpty {
+                filters["releaseDateGte"] = gte
+                filters["release_date_gte"] = gte
+                filters["primary_release_date.gte"] = gte
+            }
+            if let lte, !lte.isEmpty {
+                filters["releaseDateLte"] = lte
+                filters["release_date_lte"] = lte
+                filters["primary_release_date.lte"] = lte
+            }
+
             let country = originCountryText.trimmingCharacters(in: .whitespacesAndNewlines)
             if !country.isEmpty {
                 filters["withOriginCountry"] = country
@@ -17111,7 +18436,7 @@ private struct CollectionTmdbSourceSheet: View {
                 payload["filters"] = filters
             }
         }
-        onAdd(payload)
+        onSave(payload)
         dismiss()
     }
 }
@@ -17119,7 +18444,8 @@ private struct CollectionTmdbSourceSheet: View {
 /// Minimal Trakt list form — writes Android-compatible `provider: trakt` JSON.
 private struct CollectionTraktSourceSheet: View {
     let accentColor: Color
-    let onAdd: ([String: Any]) -> Void
+    var initialSource: [String: Any]? = nil
+    let onSave: ([String: Any]) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var titleText = ""
@@ -17127,6 +18453,36 @@ private struct CollectionTraktSourceSheet: View {
     @State private var mediaType = "movie"
 
     private let mediaTypes = [("movie", "Movie"), ("tv", "TV")]
+    private var isEditing: Bool { initialSource != nil }
+
+    init(accentColor: Color, initialSource: [String: Any]? = nil, onSave: @escaping ([String: Any]) -> Void) {
+        self.accentColor = accentColor
+        self.initialSource = initialSource
+        self.onSave = onSave
+
+        let title = initialSource?["title"] as? String ?? ""
+        var listId = ""
+        if let id = initialSource?["traktListId"] as? Int64 {
+            listId = String(id)
+        } else if let id = initialSource?["traktListId"] as? Int {
+            listId = String(id)
+        } else if let id = initialSource?["trakt_list_id"] as? Int64 {
+            listId = String(id)
+        } else if let id = initialSource?["trakt_list_id"] as? Int {
+            listId = String(id)
+        } else if let idStr = initialSource?["traktListId"] as? String {
+            listId = idStr
+        } else if let idStr = initialSource?["trakt_list_id"] as? String {
+            listId = idStr
+        }
+        let media = (initialSource?["mediaType"] as? String)
+            ?? (initialSource?["media_type"] as? String)
+            ?? "movie"
+
+        _titleText = State(initialValue: title)
+        _listIdText = State(initialValue: listId)
+        _mediaType = State(initialValue: media)
+    }
 
     private var canAdd: Bool {
         !titleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -17134,7 +18490,14 @@ private struct CollectionTraktSourceSheet: View {
     }
 
     var body: some View {
-        sourceSheetChrome(title: L10n.string("tvos_settings_add_trakt_list", fallback: "Add Trakt List"), subtitle: L10n.string("tvos_settings_attach_a_public_trakt_list_by_numeric_list_id", fallback: "Attach a public Trakt list by numeric list id.")) {
+        sourceSheetChrome(
+            title: isEditing
+                ? L10n.string("tvos_settings_edit_trakt_list", fallback: "Edit Trakt List")
+                : L10n.string("tvos_settings_add_trakt_list", fallback: "Add Trakt List"),
+            subtitle: isEditing
+                ? "Update the public Trakt list ID or media type."
+                : L10n.string("tvos_settings_attach_a_public_trakt_list_by_numeric_list_id", fallback: "Attach a public Trakt list by numeric list id.")
+        ) {
             labeled("Title") {
                 SettingsSearchStyleField(text: $titleText, placeholder: L10n.string("tvos_settings_list_title", fallback: "List title"), height: 58, fontSize: 20, horizontalPadding: 22)
             }
@@ -17153,24 +18516,26 @@ private struct CollectionTraktSourceSheet: View {
         } footer: {
             CollectionsGlassButton(title: L10n.string("action_cancel", fallback: "Cancel"), action: { dismiss() })
             CollectionsGlassButton(
-                title: L10n.string("tvos_settings_add", fallback: "Add"),
-                systemImage: "plus",
+                title: isEditing ? L10n.string("action_save", fallback: "Save") : L10n.string("tvos_settings_add", fallback: "Add"),
+                systemImage: isEditing ? "checkmark" : "plus",
                 prominent: true,
                 disabled: !canAdd,
-                action: add
+                action: save
             )
         }
     }
 
-    private func add() {
+    private func save() {
         let trimmedTitle = titleText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let listId = Int64(listIdText.trimmingCharacters(in: .whitespacesAndNewlines)), listId > 0 else { return }
         guard !trimmedTitle.isEmpty else { return }
-        onAdd([
+        onSave([
             "provider": "trakt",
             "title": trimmedTitle,
             "traktListId": listId,
+            "trakt_list_id": listId,
             "mediaType": mediaType,
+            "media_type": mediaType,
             "sortBy": "rank",
             "sortHow": "asc"
         ])
@@ -17181,7 +18546,8 @@ private struct CollectionTraktSourceSheet: View {
 /// Minimal MDBList form — writes Android-compatible `provider: mdblist` JSON.
 private struct CollectionMdbListSourceSheet: View {
     let accentColor: Color
-    let onAdd: ([String: Any]) -> Void
+    var initialSource: [String: Any]? = nil
+    let onSave: ([String: Any]) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var titleText = ""
@@ -17198,6 +18564,45 @@ private struct CollectionMdbListSourceSheet: View {
         ("year.desc", "Release Date")
     ]
 
+    private var isEditing: Bool { initialSource != nil }
+
+    init(accentColor: Color, initialSource: [String: Any]? = nil, onSave: @escaping ([String: Any]) -> Void) {
+        self.accentColor = accentColor
+        self.initialSource = initialSource
+        self.onSave = onSave
+
+        let title = initialSource?["title"] as? String ?? ""
+        var sourceText = ""
+        if let url = initialSource?["mdblistUrl"] as? String, !url.isEmpty {
+            sourceText = url
+        } else if let url = initialSource?["mdblist_url"] as? String, !url.isEmpty {
+            sourceText = url
+        } else if let slug = initialSource?["mdblistSlug"] as? String, !slug.isEmpty {
+            sourceText = slug
+        } else if let slug = initialSource?["mdblist_slug"] as? String, !slug.isEmpty {
+            sourceText = slug
+        } else if let id = initialSource?["mdblistId"] as? Int {
+            sourceText = String(id)
+        } else if let id = initialSource?["mdblist_id"] as? Int {
+            sourceText = String(id)
+        } else if let idStr = initialSource?["mdblistId"] as? String {
+            sourceText = idStr
+        } else if let idStr = initialSource?["mdblist_id"] as? String {
+            sourceText = idStr
+        }
+        let media = (initialSource?["mediaType"] as? String)
+            ?? (initialSource?["media_type"] as? String)
+            ?? "all"
+        let sort = (initialSource?["sortBy"] as? String)
+            ?? (initialSource?["sort_by"] as? String)
+            ?? "rank"
+
+        _titleText = State(initialValue: title)
+        _listSourceText = State(initialValue: sourceText)
+        _mediaType = State(initialValue: media)
+        _sortBy = State(initialValue: sort)
+    }
+
     private var canAdd: Bool {
         !titleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !listSourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -17205,8 +18610,12 @@ private struct CollectionMdbListSourceSheet: View {
 
     var body: some View {
         sourceSheetChrome(
-            title: L10n.string("tvos_settings_add_mdblist", fallback: "Add MDBList"),
-            subtitle: L10n.string("tvos_settings_add_mdblist_subtitle", fallback: "Attach a public MDBList list by URL, username/slug, or list ID."),
+            title: isEditing
+                ? L10n.string("tvos_settings_edit_mdblist", fallback: "Edit MDBList")
+                : L10n.string("tvos_settings_add_mdblist", fallback: "Add MDBList"),
+            subtitle: isEditing
+                ? "Update the MDBList list URL, media filter, or sort option."
+                : L10n.string("tvos_settings_add_mdblist_subtitle", fallback: "Attach a public MDBList list by URL, username/slug, or list ID."),
             scrollable: true
         ) {
             labeled(L10n.string("tvos_settings_source_title", fallback: "Title")) {
@@ -17272,11 +18681,11 @@ private struct CollectionMdbListSourceSheet: View {
         } footer: {
             CollectionsGlassButton(title: L10n.string("action_cancel", fallback: "Cancel"), action: { dismiss() })
             CollectionsGlassButton(
-                title: L10n.string("tvos_settings_add", fallback: "Add"),
-                systemImage: "plus",
+                title: isEditing ? L10n.string("action_save", fallback: "Save") : L10n.string("tvos_settings_add", fallback: "Add"),
+                systemImage: isEditing ? "checkmark" : "plus",
                 prominent: true,
                 disabled: !canAdd,
-                action: add
+                action: save
             )
         }
         .task {
@@ -17293,7 +18702,7 @@ private struct CollectionMdbListSourceSheet: View {
         isLoadingUserLists = false
     }
 
-    private func add() {
+    private func save() {
         let trimmedTitle = titleText.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedSource = listSourceText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTitle.isEmpty, !trimmedSource.isEmpty else { return }
@@ -17302,25 +18711,31 @@ private struct CollectionMdbListSourceSheet: View {
             "provider": "mdblist",
             "title": trimmedTitle,
             "mediaType": mediaType,
-            "sortBy": sortBy
+            "media_type": mediaType,
+            "sortBy": sortBy,
+            "sort_by": sortBy
         ]
 
         if let id = Int(trimmedSource), id > 0 {
             payload["mdblistId"] = id
+            payload["mdblist_id"] = id
         } else if trimmedSource.lowercased().hasPrefix("http://") || trimmedSource.lowercased().hasPrefix("https://") {
             payload["mdblistUrl"] = trimmedSource
+            payload["mdblist_url"] = trimmedSource
             if let components = URLComponents(string: trimmedSource) {
                 let parts = components.path.split(separator: "/").map(String.init)
                 if let listsIndex = parts.firstIndex(of: "lists"), listsIndex + 2 <= parts.count {
                     let userAndSlug = "\(parts[listsIndex + 1])/\(parts[listsIndex + 2].replacingOccurrences(of: ".json", with: ""))"
                     payload["mdblistSlug"] = userAndSlug
+                    payload["mdblist_slug"] = userAndSlug
                 }
             }
         } else {
             payload["mdblistSlug"] = trimmedSource
+            payload["mdblist_slug"] = trimmedSource
         }
 
-        onAdd(payload)
+        onSave(payload)
         dismiss()
     }
 }
