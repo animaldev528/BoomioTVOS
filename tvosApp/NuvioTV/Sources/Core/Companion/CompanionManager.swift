@@ -390,7 +390,37 @@ final class CompanionManager: NSObject {
         case "keyboard_submit":
             CompanionRemote.post(.companionSearchSubmitted)
 
-        case "play", "iptv_tune", "audio_fork_start", "audio_fork_stop", "music_identify":
+        case "stealth_search":
+            // The phone's magnifier: bring the TV's own search screen up. The
+            // query itself arrives as `keyboard_input` frames below.
+            CompanionSearchChannel.shared.open()
+
+        case "keyboard_input":
+            // The field's whole text, not a keystroke: the phone sends its
+            // current contents so backspace and mid-edit are unambiguous.
+            CompanionSearchChannel.shared.replace(frame.text ?? "")
+
+        case "keyboard_submit":
+            CompanionSearchChannel.shared.submit()
+
+        case "stealth_nav":
+            // tvOS has no focus engine seam: focus follows the user's remote,
+            // and an app cannot move it from outside the view tree the way
+            // Android's `dispatchKeyEvent` does.
+            log.info("stealth_nav ignored: tvOS cannot move focus programmatically")
+
+        case "audio_fork_start":
+            // Private listening needs the TV to tap its own decoded audio and
+            // push PCM over UDP. AVPlayer exposes no audio tap at all, and the
+            // custom engine's path has not been built for one yet — so the TV
+            // cannot fork. Say so: the phone holds a 5 s ack waiter and reports
+            // a generic timeout when nothing comes back, which hides the reason.
+            send(CompanionOutbound.AudioForkAck(status: "error", reason: "fork_unavailable"))
+
+        case "audio_fork_stop":
+            send(CompanionOutbound.AudioForkAck(status: "stopped", reason: nil))
+
+        case "play", "iptv_tune", "music_identify":
             log.info("\(frame.type, privacy: .public) is not implemented on tvOS yet")
 
         default:

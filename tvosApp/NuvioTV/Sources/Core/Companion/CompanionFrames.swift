@@ -52,6 +52,18 @@ enum CompanionOutbound {
     struct PlaybackStopped: Encodable {
         let type = "playback_stopped"
     }
+
+    /// The TV's answer to `audio_fork_start` / `audio_fork_stop`. The phone arms
+    /// a 5 s ack waiter and shows a generic timeout if none arrives, so a TV
+    /// that cannot fork audio still owes it an answer.
+    struct AudioForkAck: Encodable {
+        let type = "audio_fork"
+        /// `started`, `stopped`, or `error`.
+        let status: String
+        /// On `error`: `no_active_player`, `different_network`,
+        /// `bad_phone_address`, anything else is "fork unavailable".
+        let reason: String?
+    }
 }
 
 /// A frame from the hub (a paired phone, a watch party, or legacy bsm).

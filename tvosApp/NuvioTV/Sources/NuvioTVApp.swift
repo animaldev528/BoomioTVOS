@@ -4555,6 +4555,25 @@ private struct TVMainTabView: View {
         .onChange(of: showWatchPartyTab) { _, isShown in
             if !isShown, selectedTab == .party { selectedTab = .home }
         }
+        // Boomio companion: the paired phone's search button and keyboard.
+        // `CompanionSearchChannel` (the socket side) accumulates the typed
+        // query; this shell owns the tab selection and both search view models,
+        // so it is the only place that can put them on screen.
+        .onReceive(NotificationCenter.default.publisher(for: .boomioCompanionSearchOpened)) { _ in
+            selectedTab = .search
+            applyCompanionSearchQuery("")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .boomioCompanionSearchTyped)) { note in
+            guard let query = note.object as? String else { return }
+            selectedTab = .search
+            applyCompanionSearchQuery(query)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .boomioCompanionSearchSubmitted)) { note in
+            guard let query = note.object as? String, !query.isEmpty else { return }
+            selectedTab = .search
+            applyCompanionSearchQuery(query)
+            submitCompanionSearch(query)
+        }
     }
 
     /// Search screen chosen in Settings → Layout & Discovery → Search Style.
@@ -4599,6 +4618,35 @@ private struct TVMainTabView: View {
                 onContentClick: onNavigateToDetails,
                 onLongPress: onLongPressCard
             )
+        }
+    }
+
+    // MARK: - Boomio companion search
+
+    /// Which view model backs the search tab right now. Mirrors `searchTab`:
+    /// anything that is not one of the three named styles renders the Netflix
+    /// screen, so that is the fallback here too.
+    private var companionSearchUsesNetflixModel: Bool {
+        !["Classic", "Grid", "Native"].contains(searchStyle)
+    }
+
+    /// Put `query` into the visible search field. The phone sends deltas and
+    /// `CompanionSearchChannel` has already accumulated them, so this is the
+    /// whole query, not an append.
+    private func applyCompanionSearchQuery(_ query: String) {
+        if companionSearchUsesNetflixModel {
+            netflixSearchViewModel.searchText = query
+        } else {
+            searchViewModel.searchText = query
+        }
+    }
+
+    /// Run the search the phone typed. Only called for a non-empty query.
+    private func submitCompanionSearch(_ query: String) {
+        if companionSearchUsesNetflixModel {
+            netflixSearchViewModel.performSearch(query: query)
+        } else {
+            searchViewModel.performSearch(query: query)
         }
     }
 
