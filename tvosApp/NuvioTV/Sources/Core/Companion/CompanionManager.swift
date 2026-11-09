@@ -375,9 +375,9 @@ final class CompanionManager: NSObject {
             CompanionSearchChannel.shared.open()
 
         case "keyboard_input":
-            // A delta — the phone clears its box after every send, so the
-            // channel accumulates. It announces the full query.
-            CompanionSearchChannel.shared.type(frame.text ?? "")
+            // The field's whole text, not a keystroke: the phone sends its
+            // current contents so backspace and mid-edit are unambiguous.
+            CompanionSearchChannel.shared.replace(frame.text ?? "")
 
         case "keyboard_submit":
             CompanionSearchChannel.shared.submit()
