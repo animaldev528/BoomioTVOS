@@ -4168,7 +4168,10 @@ extension CinemetaCatalogRepository {
             source, catalogId: source.catalogId, type: source.type, genre: source.genre
         ), !items.isEmpty {
             rows = [TVHubSectionRow(
-                id: "\(source.catalogId)|\(source.catalogId)",
+                // Add-on in the key as well as the catalog: two add-ons can
+                // serve a catalog with the same id, and duplicate SwiftUI ids
+                // would drop or misplace a row.
+                id: "\(source.addonId)|\(source.catalogId)|\(source.catalogId)",
                 title: source.name,
                 catalogId: source.catalogId,
                 items: items,
@@ -4183,7 +4186,7 @@ extension CinemetaCatalogRepository {
             cacheMetadata(allItems, context: Self.metadataCacheContext)
         }
         return TVHubSection(
-            id: source.catalogId,
+            id: source.id,
             title: source.name,
             addonName: source.addonName,
             rows: rows
@@ -4235,7 +4238,7 @@ extension CinemetaCatalogRepository {
                             source, catalogId: tile.id, type: tileType, genre: nil
                         ), !items.isEmpty else { return (offset + index, nil) }
                         return (offset + index, TVHubSectionRow(
-                            id: "\(source.catalogId)|\(tile.id)",
+                            id: "\(source.addonId)|\(source.catalogId)|\(tile.id)",
                             title: tile.name,
                             catalogId: tile.id,
                             items: items,
