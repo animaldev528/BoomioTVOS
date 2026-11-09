@@ -11984,6 +11984,29 @@ final class TVHomeStore: ObservableObject {
     private var loadedContentIdentity: TVHomeContentIdentity?
     private var loadingContentIdentity: TVHomeContentIdentity?
     private var loadGeneration: UInt = 0
+    private var feedbackObserver: NSObjectProtocol?
+
+    init() {
+        // "Not interested" is recorded locally, so a row has to re-read its
+        // items when it changes. Re-assigning the element re-runs
+        // `TVHomeSection.items`'s didSet, which is what drops the title.
+        feedbackObserver = NotificationCenter.default.addObserver(
+            forName: TitleFeedbackStore.changedNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            for index in self.sections.indices {
+                self.sections[index].items = self.sections[index].items
+            }
+        }
+    }
+
+    deinit {
+        if let feedbackObserver {
+            NotificationCenter.default.removeObserver(feedbackObserver)
+        }
+    }
 
     func isLoaded(for identity: TVHomeContentIdentity) -> Bool {
         hasLoaded && loadedContentIdentity == identity

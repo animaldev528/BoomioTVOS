@@ -73,8 +73,10 @@ struct MoreLikeThisView: View {
         guard items.isEmpty else { return }
         isLoading = true
         let related = await TmdbDetailsService.fetchMoreLikeThis(for: meta, limit: 24)
+        // Clear the spinner even when the fetch was cancelled: a view that
+        // outlives its task must not sit on an empty screen spinning forever.
+        isLoading = false
         guard !Task.isCancelled else { return }
         items = TitleFeedbackStore.visible(related.map(\.asMeta))
-        isLoading = false
     }
 }

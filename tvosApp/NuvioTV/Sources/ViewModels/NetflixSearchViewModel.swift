@@ -17,6 +17,9 @@ class NetflixSearchViewModel: ObservableObject {
     @Published var sections: [CatalogSearchSection] = []
     /// TMDB people matching the query, shown above the title rows.
     @Published var people: [TmdbPersonMetadata] = []
+    /// True while the people lookup for the current query is in flight, so the
+    /// empty state does not pre-empt a rail that is about to answer.
+    @Published private(set) var isLoadingPeople = false
     @Published var isLoading = false
     @Published var error: String?
     @Published var emptyStateReason: CatalogSearchReason?
@@ -28,6 +31,8 @@ class NetflixSearchViewModel: ObservableObject {
     private var allResults: [NuvioMeta] = []
     private var allSections: [CatalogSearchSection] = []
     private var peopleTask: Task<Void, Never>?
+    /// The query `people` belongs to, so a new query can drop a stale rail.
+    private var peopleQuery: String?
     private var cancellables = Set<AnyCancellable>()
     private var searchTask: Task<Void, Never>?
     private var searchTimeoutTask: Task<Void, Never>?
@@ -101,6 +106,8 @@ class NetflixSearchViewModel: ObservableObject {
             results = []
             sections = []
             people = []
+            peopleQuery = nil
+            isLoadingPeople = false
             error = nil
             emptyStateReason = nil
             isLoading = false
@@ -160,6 +167,8 @@ class NetflixSearchViewModel: ObservableObject {
             results = []
             sections = []
             people = []
+            peopleQuery = nil
+            isLoadingPeople = false
             error = nil
             emptyStateReason = nil
             isLoading = false
@@ -313,12 +322,23 @@ class NetflixSearchViewModel: ObservableObject {
         peopleTask?.cancel()
         guard TmdbDetailsService.canSearchPeople else {
             people = []
+            peopleQuery = query
+            isLoadingPeople = false
             return
         }
+        // The previous query's rail is not an answer to this one, so it is
+        // dropped the moment the query changes rather than lingering until
+        // TMDB replies.
+        if peopleQuery != query {
+            people = []
+            peopleQuery = query
+        }
+        isLoadingPeople = true
         peopleTask = Task { [weak self] in
             let found = await TmdbDetailsService.searchPeople(query: query, limit: 10)
             guard let self, !Task.isCancelled, self.searchGeneration == generation else { return }
             self.people = found
+            self.isLoadingPeople = false
         }
     }
 
@@ -421,6 +441,8 @@ class NetflixSearchViewModel: ObservableObject {
         results = []
         sections = []
         people = []
+        peopleQuery = nil
+        isLoadingPeople = false
         error = nil
         emptyStateReason = nil
         isLoading = false

@@ -81,6 +81,40 @@ final class HubBrowseViewModel: ObservableObject {
         }
     }
 
+    /// Re-reads every loaded row through the local "Not interested" filter, so
+    /// a dismissal removes its tile from the row it was dismissed from instead
+    /// of waiting for the next hub activation to rebuild the section.
+    func applyFeedbackFilter() {
+        var filtered: [TVHubSection] = []
+        filtered.reserveCapacity(sections.count)
+        for section in sections {
+            var rows: [TVHubSectionRow] = []
+            for row in section.rows {
+                let visible = TitleFeedbackStore.visible(row.items)
+                guard !visible.isEmpty else { continue }
+                if visible.count == row.items.count {
+                    rows.append(row)
+                } else {
+                    rows.append(TVHubSectionRow(
+                        id: row.id,
+                        title: row.title,
+                        catalogId: row.catalogId,
+                        items: visible,
+                        addonName: row.addonName
+                    ))
+                }
+            }
+            guard !rows.isEmpty else { continue }
+            filtered.append(TVHubSection(
+                id: section.id,
+                title: section.title,
+                addonName: section.addonName,
+                rows: rows
+            ))
+        }
+        sections = filtered
+    }
+
     /// Drops the visible rows and abandons the in-flight load. The next
     /// activation reloads.
     func cancel() {

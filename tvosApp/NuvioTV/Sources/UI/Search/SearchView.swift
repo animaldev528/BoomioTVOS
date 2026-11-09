@@ -311,14 +311,24 @@ struct SearchView: View {
             }
         } else if visibleResults.isEmpty && viewModel.people.isEmpty {
             // An actor query matches no title by design: the People rail is
-            // the answer, so the empty state must not pre-empt it.
-            let reason = viewModel.emptyStateReason ?? .noResults
-            centeredState {
-                messageState(
-                    icon: reason.icon,
-                    title: reason.title,
-                    subtitle: reason.subtitle(for: viewModel.searchText)
-                )
+            // the answer, so the empty state must not pre-empt it — and while
+            // that lookup is still in flight the screen keeps spinning rather
+            // than claiming there were no results.
+            if viewModel.isLoadingPeople {
+                centeredState {
+                    ProgressView()
+                        .scaleEffect(1.6)
+                        .tint(.white)
+                }
+            } else {
+                let reason = viewModel.emptyStateReason ?? .noResults
+                centeredState {
+                    messageState(
+                        icon: reason.icon,
+                        title: reason.title,
+                        subtitle: reason.subtitle(for: viewModel.searchText)
+                    )
+                }
             }
         } else if usesSourceRails, let onOpenResult {
             SearchResultsRails(

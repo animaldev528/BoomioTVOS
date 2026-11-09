@@ -50,6 +50,11 @@ struct HubBrowseView: View {
                 model.cancel()
             }
         }
+        // "Not interested" is recorded locally, so the row has to re-read its
+        // items when the signal changes or the tile it just dismissed stays.
+        .onReceive(NotificationCenter.default.publisher(for: TitleFeedbackStore.changedNotification)) { _ in
+            model.applyFeedbackFilter()
+        }
     }
 
     private var content: some View {
