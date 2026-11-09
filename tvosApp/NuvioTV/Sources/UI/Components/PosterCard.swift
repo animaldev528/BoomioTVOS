@@ -3558,6 +3558,17 @@ struct TitleActionsMenuContent: View {
             }
 
             Button {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) {
+                    TitleActionBus.shared.openMoreLikeThis(for: meta)
+                }
+            } label: {
+                Label(
+                    L10n.string("action_more_like_this", fallback: "More like this"),
+                    systemImage: "sparkles"
+                )
+            }
+
+            Button {
                 scheduleWatchedToggle(desiredIsWatched: !isItemWatched)
             } label: {
                 Label(
@@ -3568,6 +3579,40 @@ struct TitleActionsMenuContent: View {
                 )
             }
             .disabled(isLibraryWatchedResolutionPending)
+
+            let isLiked = TitleFeedbackStore.isLiked(meta)
+            Button {
+                TitleFeedbackStore.setLiked(!isLiked, for: meta)
+            } label: {
+                Label(
+                    isLiked
+                        ? L10n.string("action_liked", fallback: "Liked")
+                        : L10n.string("action_like", fallback: "Like"),
+                    systemImage: isLiked ? "hand.thumbsup.fill" : "hand.thumbsup"
+                )
+            }
+
+            // Local for now: the taste engine has no feedback endpoint, so the
+            // signal is recorded on the device and the row stops drawing it.
+            Button {
+                TitleFeedbackStore.setDismissed(true, for: meta)
+            } label: {
+                Label(
+                    L10n.string("action_not_interested", fallback: "Not interested"),
+                    systemImage: "eye.slash"
+                )
+            }
+
+            Button {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) {
+                    TitleActionBus.shared.openPublicListPicker()
+                }
+            } label: {
+                Label(
+                    L10n.string("action_add_public_list_to_home", fallback: "Add a public list to Home"),
+                    systemImage: "list.bullet.rectangle"
+                )
+            }
 
             if let onRefreshCatalog {
                 Button {

@@ -17132,7 +17132,9 @@ private struct SettingsSearchStyleField: View {
 /// Settings-style chip (same glass language as category pills / FilterChip).
 /// Uses a flat fill + focus outline instead of nested `loginGlassCapsule`
 /// so chips do not read as a second glass box inside the editor panel.
-private struct CollectionChipButton: View {
+/// Internal, not file-private: the tile long-press menu's public-list sheet
+/// uses the same chips as the collection editor.
+struct CollectionChipButton: View {
     let title: String
     let isSelected: Bool
     let action: () -> Void
@@ -18539,7 +18541,9 @@ private struct CollectionTmdbSourceSheet: View {
 }
 
 /// Minimal Trakt list form — writes Android-compatible `provider: trakt` JSON.
-private struct CollectionTraktSourceSheet: View {
+/// Internal, not file-private: the tile long-press menu's "Add a public list
+/// to Home" reuses this picker instead of growing a second implementation.
+struct CollectionTraktSourceSheet: View {
     let accentColor: Color
     var initialSource: [String: Any]? = nil
     let onSave: ([String: Any]) -> Void
@@ -18641,7 +18645,8 @@ private struct CollectionTraktSourceSheet: View {
 }
 
 /// Minimal MDBList form — writes Android-compatible `provider: mdblist` JSON.
-private struct CollectionMdbListSourceSheet: View {
+/// Internal, not file-private: see `CollectionTraktSourceSheet`.
+struct CollectionMdbListSourceSheet: View {
     let accentColor: Color
     var initialSource: [String: Any]? = nil
     let onSave: ([String: Any]) -> Void

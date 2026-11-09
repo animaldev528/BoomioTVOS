@@ -276,6 +276,8 @@ enum TVScreen: Equatable, CustomStringConvertible {
     case productionBrowse(MetaCompany)
     /// Movies and series associated with a TMDB person.
     case personBrowse(TmdbPersonMetadata)
+    /// Related titles for one card, reached from the tile long-press menu.
+    case moreLikeThis(id: String, type: String)
 
     var description: String {
         switch self {
@@ -288,6 +290,7 @@ enum TVScreen: Equatable, CustomStringConvertible {
         case let .collectionFolder(folder, title): return "collectionFolder(\(folder.id), \(title))"
         case let .productionBrowse(company): return "productionBrowse(\(company.name))"
         case let .personBrowse(person): return "personBrowse(\(person.name))"
+        case let .moreLikeThis(id, type): return "moreLikeThis(\(id), \(type))"
         }
     }
 
@@ -537,6 +540,11 @@ struct ContentView: View {
     @State private var productionBrowseReturn: DetailsNavigationEntry?
     /// Details title to restore when leaving a person browse.
     @State private var personBrowseReturn: DetailsNavigationEntry?
+    /// The card whose "More like this" screen is open. The screen case carries
+    /// its identity; this carries the record the screen needs to load.
+    @State private var moreLikeThisMeta: NuvioMeta?
+    @State private var isAddingPublicListToHome = false
+    @StateObject private var titleActionBus = TitleActionBus.shared
     /// Titles to walk back through when Details opened Details ("More like
     /// this"). Empty means the current Details is the root of its chain and back
     /// belongs to its recorded return destination.
@@ -647,7 +655,7 @@ struct ContentView: View {
                         }
                 }
 
-            case .main, .details, .player, .cloudLibrary, .collectionFolder, .productionBrowse, .personBrowse:
+            case .main, .details, .player, .cloudLibrary, .collectionFolder, .productionBrowse, .personBrowse, .moreLikeThis:
                 // The tab view (Home included) stays mounted for the whole
                 // session; Details and Player are presented as overlays on TOP
                 // of it rather than replacing it. Returning therefore leaves
@@ -656,6 +664,21 @@ struct ContentView: View {
                 // scratch and snapping back to the first card.
                 appContainer
                     .transition(.opacity)
+                    .onReceive(titleActionBus.$moreLikeThis) { meta in
+                        guard let meta else { return }
+                        titleActionBus.moreLikeThis = nil
+                        openMoreLikeThisScreen(for: meta)
+                    }
+                    .onReceive(titleActionBus.$isAddingPublicList) { showing in
+                        guard showing else { return }
+                        titleActionBus.isAddingPublicList = false
+                        isAddingPublicListToHome = true
+                    }
+                    .sheet(isPresented: $isAddingPublicListToHome) {
+                        PublicListToHomeSheet {
+                            isAddingPublicListToHome = false
+                        }
+                    }
             }
 
             // The adaptive tab sidebar is briefly expanded while its first
@@ -1081,7 +1104,7 @@ struct ContentView: View {
     private var fullScreenOverlayPresented: Bool {
         if isResolvingContinueWatchingStream { return true }
         switch activeScreen {
-        case .details, .player, .cloudLibrary, .collectionFolder, .productionBrowse, .personBrowse: return true
+        case .details, .player, .cloudLibrary, .collectionFolder, .productionBrowse, .personBrowse, .moreLikeThis: return true
         default: return false
         }
     }
@@ -1165,12 +1188,25 @@ struct ContentView: View {
                 }
                 personBrowseReturn = nil
             }
+        case .moreLikeThis:
+            withAnimation(.easeInOut(duration: 0.24)) {
+                activeScreen = .main
+                moreLikeThisMeta = nil
+            }
         default:
             break
         }
     }
 
     private func ignorePlayerDismissalHandoffExit() {}
+
+    /// Opens the long-press menu's "More like this" grid for one card.
+    private func openMoreLikeThisScreen(for meta: NuvioMeta) {
+        moreLikeThisMeta = meta
+        withAnimation(.easeInOut(duration: 0.24)) {
+            activeScreen = .moreLikeThis(id: meta.id, type: meta.type)
+        }
+    }
 
     /// Backs out of Details to the title it was opened from (a "More like this"
     /// chain), or to the screen that opened the root Details.
@@ -2858,6 +2894,23 @@ struct ContentView: View {
                                 detailsLibraryWatchedContext = nil
                             }
                             personBrowseReturn = nil
+                        }
+                    }
+                )
+                .transition(.opacity)
+                .onDisappear {
+                    detailsDidDisappearGeneration &+= 1
+                }
+                .zIndex(1)
+            }
+
+            if case .moreLikeThis = activeScreen, let meta = moreLikeThisMeta {
+                MoreLikeThisView(
+                    meta: meta,
+                    onSelect: { id, type in
+                        withAnimation(.easeInOut(duration: 0.28)) {
+                            moreLikeThisMeta = nil
+                            openDetailsRoot(id: id, type: type)
                         }
                     }
                 )
@@ -10318,7 +10371,13 @@ struct TVHomeSection: Identifiable {
     let id: String
     let title: String
     var items: [NuvioMeta] {
-        didSet { items = TVHomeCardIdentity.uniqueTitles(items) }
+        didSet {
+            items = TVHomeCardIdentity.uniqueTitles(items)
+            // "Not interested" is recorded locally, so the row drops the title
+            // here rather than every row builder having to remember to.
+            let visible = TitleFeedbackStore.visible(items)
+            if visible.count != items.count { items = visible }
+        }
     }
     var contentType: String? = nil
     var catalogId: String? = nil

@@ -4097,18 +4097,37 @@ struct TVHubSection: Identifiable {
     var rows: [TVHubSectionRow]
 }
 
+/// One provider's ribbons at the top of a hub — "Disney+ Movies" followed by
+/// "Popular on Disney+", "New on Disney+". This is the Android hub's spotlight
+/// band: the catalogs that Home already draws, regrouped under the provider
+/// they name, and drawn before every regular section.
+struct TVHubSpotlightGroup: Identifiable {
+    let id: String
+    let title: String
+    var sources: [TVHubCatalogSource]
+}
+
 extension CinemetaCatalogRepository {
     /// The catalogs a hub browses, in the order the Android client draws them
     /// (`HubBrowseViewModel.kt`): `hub-*` sections by category rank, then the
     /// manifest's own catalogs of that kind so nothing previously reachable
-    /// disappears. Search-only and featured/Home catalogs stay on Home.
-    func hubCatalogSources(kind: TVHubKind) async -> [TVHubCatalogSource] {
+    /// disappears. Search-only catalogs stay on Home.
+    ///
+    /// The provider ribbons ("Popular on Disney+", "New on Netflix") come back
+    /// separately as `spotlights`, grouped under the provider they name: the
+    /// hub draws those first, which is Android's top band. Everything else
+    /// that is Home-only stays Home-only.
+    func hubCatalogSources(
+        kind: TVHubKind
+    ) async -> (sections: [TVHubCatalogSource], spotlights: [TVHubSpotlightGroup]) {
         let manifestURLs = Self.configuredStreamAddonManifestURLs
-        guard !manifestURLs.isEmpty else { return [] }
+        guard !manifestURLs.isEmpty else { return ([], []) }
         let manifests = await loadManifestsConcurrently(urls: manifestURLs)
         let deleted = TVHomeCatalogOrder.deletedCatalogKeys()
         var hubSources: [TVHubCatalogSource] = []
         var plainSources: [TVHubCatalogSource] = []
+        var spotlightGroups: [TVHubSpotlightGroup] = []
+        var spotlightIndex: [String: Int] = [:]
 
         for manifestURL in manifestURLs {
             guard let manifest = manifests[manifestURL],
@@ -4120,8 +4139,6 @@ extension CinemetaCatalogRepository {
             for catalog in manifest.catalogs ?? [] {
                 guard Self.hubCatalog(catalog, matches: kind) else { continue }
                 guard !Self.isSearchOnlyCatalog(catalog) else { continue }
-                // Featured/curated catalogs stay on Home, not the hubs.
-                guard !Self.isFeaturedHomeCatalog(catalog) else { continue }
                 if catalog.requiresGenre, catalog.firstGenreOption == nil { continue }
                 let settingsKey = TVHomeCatalogOrder.catalogSettingsKey(
                     addonId: manifest.id,
@@ -4140,7 +4157,31 @@ extension CinemetaCatalogRepository {
                         ?? catalog.id,
                     genre: catalog.requiresGenre ? catalog.firstGenreOption : nil
                 )
-                if source.isHub { hubSources.append(source) } else { plainSources.append(source) }
+                if Self.isSpotlightCatalog(catalog) {
+                    let provider = Self.spotlightProvider(forName: source.name, fallback: addonName)
+                    let key = provider.lowercased()
+                    if let index = spotlightIndex[key] {
+                        // Two or three ribbons per provider, never the whole
+                        // Home page repeated at the top of a hub.
+                        if spotlightGroups[index].sources.count < Self.spotlightRowsPerProvider {
+                            spotlightGroups[index].sources.append(source)
+                        }
+                    } else if spotlightGroups.count < Self.spotlightProvidersLimit {
+                        spotlightIndex[key] = spotlightGroups.count
+                        spotlightGroups.append(TVHubSpotlightGroup(
+                            id: "spotlight-\(key)",
+                            title: "\(provider) \(Self.spotlightNoun(kind: kind))",
+                            sources: [source]
+                        ))
+                    }
+                } else if Self.isFeaturedHomeCatalog(catalog) {
+                    // Featured/curated catalogs stay on Home, not the hubs.
+                    continue
+                } else if source.isHub {
+                    hubSources.append(source)
+                } else {
+                    plainSources.append(source)
+                }
             }
         }
 
@@ -4153,7 +4194,7 @@ extension CinemetaCatalogRepository {
                 return l != r ? l < r : lhs.offset < rhs.offset
             }
             .map(\.element)
-        return hubs + plainSources
+        return (hubs + plainSources, spotlightGroups)
     }
 
     /// Loads one hub section. A `hub-*` catalog is reached through its
@@ -4185,12 +4226,45 @@ extension CinemetaCatalogRepository {
         if !allItems.isEmpty {
             cacheMetadata(allItems, context: Self.metadataCacheContext)
         }
+        // "Not interested" is recorded on the device; a row it empties is
+        // dropped like any other empty row.
+        let visibleRows = rows.compactMap { row -> TVHubSectionRow? in
+            let items = TitleFeedbackStore.visible(row.items)
+            guard !items.isEmpty else { return nil }
+            return TVHubSectionRow(
+                id: row.id,
+                title: row.title,
+                catalogId: row.catalogId,
+                items: items,
+                addonName: row.addonName
+            )
+        }
+        guard !visibleRows.isEmpty else { return nil }
         return TVHubSection(
             id: source.id,
             title: source.name,
             addonName: source.addonName,
-            rows: rows
+            rows: visibleRows
         )
+    }
+
+    /// One spotlight group's rows. The group's catalogs load together: a
+    /// provider contributes several ribbons, and loading them one at a time
+    /// would put a queue of requests in front of the hub's first paint.
+    func hubSpotlightRows(for group: TVHubSpotlightGroup) async -> [TVHubSectionRow] {
+        await withTaskGroup(of: (Int, [TVHubSectionRow]).self) { tasks in
+            for (index, source) in group.sources.enumerated() {
+                tasks.addTask { [source] in
+                    let section = await self.hubSection(for: source)
+                    return (index, section?.rows ?? [])
+                }
+            }
+            var rows = [[TVHubSectionRow]](repeating: [], count: group.sources.count)
+            for await (index, sectionRows) in tasks {
+                rows[index] = sectionRows
+            }
+            return rows.flatMap { $0 }
+        }
     }
 
     private func hubDrillRows(for source: TVHubCatalogSource) async -> [TVHubSectionRow] {
@@ -4328,5 +4402,52 @@ extension CinemetaCatalogRepository {
         if featuredHomeCatalogIDs.contains(id) { return true }
         let name = (catalog.name ?? "").lowercased()
         return featuredHomeCatalogNameKeywords.contains { name.contains($0) }
+    }
+
+    // MARK: Spotlights
+
+    /// A hub shows at most this many providers, and this many ribbons each:
+    /// the band is the first thing on screen, not a second Home page.
+    private static let spotlightProvidersLimit = 4
+    private static let spotlightRowsPerProvider = 4
+
+    /// The provider ribbons a hub hoists to its top band. Deliberately narrower
+    /// than `isFeaturedHomeCatalog`: a provider catalog names itself after the
+    /// ribbon ("Popular on Disney+", "New on Netflix", "Top 10 on Prime
+    /// Video"), while the taste engine's `rec-*` rows and the collection
+    /// catalogs carry a keyword without naming a provider and stay Home-only.
+    private static let spotlightNameKeywords: Set<String> = [
+        "popular", "trending", "top", "new", "upcoming", "recent", "hot",
+    ]
+
+    private static func isSpotlightCatalog(_ catalog: AddonManifestCatalog) -> Bool {
+        let rawType = catalog.type.lowercased()
+        if rawType == "collection" || rawType == "anime" { return false }
+        let id = catalog.id.lowercased()
+        if featuredHomeCatalogIDPrefixes.contains(where: { id.hasPrefix($0) }) { return false }
+        if featuredHomeCatalogIDs.contains(id) { return false }
+        let name = (catalog.name ?? "").lowercased()
+        return spotlightNameKeywords.contains { name.contains($0) }
+    }
+
+    /// "Popular on Disney+" → "Disney+"; a name with no provider marker falls
+    /// back to the add-on that serves it, so a group is never titleless.
+    static func spotlightProvider(forName name: String, fallback: String) -> String {
+        if let range = name.range(of: " on ", options: [.caseInsensitive]) {
+            let provider = name[range.upperBound...]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !provider.isEmpty { return String(provider.prefix(40)) }
+        }
+        return fallback
+    }
+
+    /// "Disney+ Movies", "Disney+ Series" — Android's band reads by noun, not
+    /// by the sidebar's own label ("TV" would make "Disney+ TV").
+    private static func spotlightNoun(kind: TVHubKind) -> String {
+        switch kind {
+        case .movies: return L10n.string("nav_movies", fallback: "Movies")
+        case .tv: return L10n.string("hub_spotlight_series", fallback: "Series")
+        case .anime: return L10n.string("nav_anime", fallback: "Anime")
+        }
     }
 }

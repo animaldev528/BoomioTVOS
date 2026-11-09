@@ -47,10 +47,26 @@ final class HubBrowseViewModel: ObservableObject {
         loadCompleted = false
         loadTask = Task { [weak self] in
             guard let self else { return }
-            let sources = await self.repository.hubCatalogSources(kind: self.kind)
+            let plan = await self.repository.hubCatalogSources(kind: self.kind)
             guard self.generation == expected, !Task.isCancelled else { return }
             var loaded: [TVHubSection] = []
-            for source in sources {
+            // The provider ribbons are the hub's top band, so they load — and
+            // publish — before any regular section: the first screenful should
+            // be the spotlight, not a list that fills in underneath it.
+            for group in plan.spotlights {
+                guard self.generation == expected, !Task.isCancelled else { return }
+                let rows = await self.repository.hubSpotlightRows(for: group)
+                guard self.generation == expected, !Task.isCancelled else { return }
+                guard !rows.isEmpty else { continue }
+                loaded.append(TVHubSection(
+                    id: group.id,
+                    title: group.title,
+                    addonName: group.sources.first?.addonName ?? "",
+                    rows: rows
+                ))
+                self.sections = loaded
+            }
+            for source in plan.sections {
                 guard self.generation == expected, !Task.isCancelled else { return }
                 if let section = await self.repository.hubSection(for: source) {
                     loaded.append(section)

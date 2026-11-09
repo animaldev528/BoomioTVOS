@@ -181,6 +181,11 @@ class SearchViewModel: ObservableObject {
             return
         }
 
+        // People are a TMDB lookup, not an add-on catalog, so they start here
+        // rather than after the fan-out: a cache hit, a failed search or a
+        // timeout must not swallow an actor query that would have answered.
+        searchPeople(for: trimmed, generation: generation)
+
         if let cached = cachedResults[cacheKey] {
             searchViewLogger.notice(
                 "search cache_hit=\(true, privacy: .public) results=\(cached.results.count, privacy: .public) complete=\(true, privacy: .public)"
@@ -192,7 +197,6 @@ class SearchViewModel: ObservableObject {
             emptyStateReason = cached.results.isEmpty ? cached.reason : nil
             isLoading = false
             if !cached.results.isEmpty { commitRecentSearch(trimmed) }
-            searchPeople(for: trimmed, generation: generation)
             if SearchResultEnrichment.hasIncompleteLeadingResults(cached.results)
                 || SearchResultEnrichment.hasIncompleteLeadingSections(cached.sections) {
                 enrich(cached.results, cacheKey: cacheKey, generation: generation, cacheable: true)
@@ -220,7 +224,6 @@ class SearchViewModel: ObservableObject {
                 let found = outcome.results
                 self.allResults = found
                 self.allSections = outcome.sections
-                self.searchPeople(for: trimmed, generation: generation)
                 if outcome.isComplete {
                     self.cache(outcome, for: cacheKey)
                 }

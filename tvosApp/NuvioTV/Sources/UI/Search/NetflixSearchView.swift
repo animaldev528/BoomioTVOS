@@ -862,8 +862,10 @@ struct NetflixSearchView: View {
         }
     }
 
+    /// People are their own rail, so a query that matches only an actor still
+    /// needs the rails even when no catalog returned a single title.
     private var usesSourceRails: Bool {
-        visibleSections.count > 1 || (visibleSections.count == 1 && !viewModel.people.isEmpty)
+        visibleSections.count > 1 || !viewModel.people.isEmpty
     }
 
     private var visibleResultIDs: [String] { visibleResults.map(\.id) }
@@ -888,7 +890,9 @@ struct NetflixSearchView: View {
             centeredState {
                 messageState(icon: "wifi.exclamationmark", title: error)
             }
-        } else if visibleResults.isEmpty {
+        } else if visibleResults.isEmpty && viewModel.people.isEmpty {
+            // An actor query matches no title by design: the People rail is
+            // the answer, so the empty state must not pre-empt it.
             let reason = viewModel.emptyStateReason ?? .noResults
             centeredState {
                 messageState(
@@ -916,7 +920,9 @@ struct NetflixSearchView: View {
             centeredState {
                 messageState(icon: "wifi.exclamationmark", title: error)
             }
-        } else if visibleResults.isEmpty {
+        } else if visibleResults.isEmpty && viewModel.people.isEmpty {
+            // An actor query matches no title by design: the People rail is
+            // the answer, so the empty state must not pre-empt it.
             let reason = viewModel.emptyStateReason ?? .noResults
             centeredState {
                 messageState(
