@@ -104,6 +104,44 @@ final class BoomioEnrolment: ObservableObject {
         stage = .idle
     }
 
+    /// Re-arms certificate presentation on a launch that never opens
+    /// onboarding.
+    ///
+    /// Presentation lives in memory (see `BoomioClientIdentity`), because the
+    /// edge is the only authority on whether it still lists this leaf. So a
+    /// fresh process starts certless by design, and this is what leaves that
+    /// state: the stored session re-registers the SAME certificate without a
+    /// human, and a success re-arms presentation for the rest of the launch.
+    /// Nothing is shown to the user — onboarding is where a failure belongs.
+    func resumeRegistration(plane: BoomioPlane) {
+        sessionAccount = Self.sessionAccount(for: plane)
+        guard let account = sessionAccount,
+              let token = BoomioSecureStore.string(account)
+        else { return }
+
+        task?.cancel()
+        task = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let identity = BoomioClientIdentity.shared
+                let certificate = try identity.certificate()
+                let reply = try await BoomioAPI(plane: plane).registerCertificate(
+                    pem: certificate.pem,
+                    fingerprint: identity.hardwareFingerprint,
+                    sessionToken: token
+                )
+                if let host = plane.expectedServiceHost {
+                    identity.markRegistered(host: host)
+                }
+                if self.runId == 0 { self.certificateFingerprint = reply.fingerprint_sha256 }
+            } catch {
+                // Stay certless. The media and sign-in surface admits that, and
+                // onboarding will pair afresh if the session is truly gone.
+            }
+            if self.runId == 0 { self.task = nil }
+        }
+    }
+
     /// Re-registers the existing certificate with the session already held.
     /// This is the recovery path when the edge reports the device as unknown —
     /// it re-sends the SAME bytes, which is what the allow-list needs.
