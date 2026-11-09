@@ -38,12 +38,13 @@ enum SearchResultEnrichment {
     /// repeated queries from re-fetching what the cache already enriched.
     static func enrich(
         _ results: [NuvioMeta],
-        repository: CatalogRepository
+        repository: CatalogRepository,
+        limit: Int = maxResultsToEnrich
     ) async -> [NuvioMeta] {
         guard !results.isEmpty else { return results }
 
         let deduplicatedResults = CinemetaCatalogRepository.deduplicatedSearchResults(results)
-        let candidateIndices = Array(deduplicatedResults.indices.prefix(maxResultsToEnrich))
+        let candidateIndices = Array(deduplicatedResults.indices.prefix(limit))
             .filter { deduplicatedResults[$0].needsSearchMetadataEnrichment }
         guard !candidateIndices.isEmpty else { return deduplicatedResults }
 
@@ -90,5 +91,43 @@ enum SearchResultEnrichment {
             cursor = end
         }
         return CinemetaCatalogRepository.deduplicatedSearchResults(enriched)
+    }
+
+    /// Enriches each source row independently, so the per-source grouping
+    /// survives the refresh. The request budget is shared across rows in row
+    /// order: a query that matches many small catalogs must not multiply the
+    /// refreshes a single flat grid made.
+    static func enrich(
+        _ sections: [CatalogSearchSection],
+        repository: CatalogRepository,
+        budget: Int = maxResultsToEnrich
+    ) async -> [CatalogSearchSection] {
+        var remaining = budget
+        var enriched: [CatalogSearchSection] = []
+        enriched.reserveCapacity(sections.count)
+        for section in sections {
+            let allowance = min(remaining, section.results.count)
+            let results: [NuvioMeta]
+            if allowance > 0, !Task.isCancelled {
+                results = await enrich(section.results, repository: repository, limit: allowance)
+            } else {
+                results = section.results
+            }
+            remaining = max(0, remaining - allowance)
+            enriched.append(CatalogSearchSection(
+                id: section.id,
+                title: section.title,
+                addonName: section.addonName,
+                catalogId: section.catalogId,
+                type: section.type,
+                results: results
+            ))
+        }
+        return enriched
+    }
+
+    /// Whether any row has leading results that still need a `/meta` refresh.
+    static func hasIncompleteLeadingSections(_ sections: [CatalogSearchSection]) -> Bool {
+        sections.contains { hasIncompleteLeadingResults($0.results) }
     }
 }

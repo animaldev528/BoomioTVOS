@@ -1009,6 +1009,75 @@ enum TmdbDetailsService {
             }
     }
 
+    /// True when a people search can run at all: TMDB on and a key present.
+    /// Checked by the search view models BEFORE scheduling the lookup, so a
+    /// disabled TMDB never starts a request it would abort.
+    static var canSearchPeople: Bool { isEnabled && apiKey != nil }
+
+    /// People matching a free-text query (`/search/person`).
+    ///
+    /// Search used to be titles-only because add-on catalogs only serve
+    /// titles; a cast member was reachable only from a title's Details page.
+    /// People are a TMDB resource, so the query is answered here and shown as
+    /// its own rail above the title rows.
+    static func searchPeople(query: String, limit: Int = 10) async -> [TmdbPersonMetadata] {
+        if requestContext == nil {
+            return await withRequestContext { await searchPeople(query: query, limit: limit) }
+        }
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, isEnabled, let apiKey, limit > 0 else { return [] }
+
+        var components = URLComponents(
+            url: apiBase.appendingPathComponent("search/person"),
+            resolvingAgainstBaseURL: false
+        )!
+        components.queryItems = [
+            URLQueryItem(name: "api_key", value: apiKey),
+            URLQueryItem(name: "language", value: preferredLanguage),
+            URLQueryItem(name: "query", value: trimmed),
+            URLQueryItem(name: "include_adult", value: "false")
+        ]
+        guard let url = components.url,
+              let (data, response) = try? await data(for: url),
+              let http = response as? HTTPURLResponse,
+              (200...299).contains(http.statusCode),
+              let decoded = try? JSONDecoder().decode(TmdbPersonSearchResponse.self, from: data)
+        else { return [] }
+
+        return decoded.results.prefix(limit).compactMap { person in
+            let name = person.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { return nil }
+            let role = person.knownForDepartment?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let profile = person.profilePath.flatMap { path in
+                path.isEmpty ? nil : imageBase + "w185" + path
+            }
+            return TmdbPersonMetadata(
+                name: name,
+                role: (role?.isEmpty == false) ? role : nil,
+                profileURL: profile,
+                tmdbId: person.id
+            )
+        }
+    }
+
+    private struct TmdbPersonSearchResponse: Decodable {
+        let results: [Person]
+
+        struct Person: Decodable {
+            let id: Int
+            let name: String
+            let profilePath: String?
+            let knownForDepartment: String?
+
+            enum CodingKeys: String, CodingKey {
+                case id, name
+                case profilePath = "profile_path"
+                case knownForDepartment = "known_for_department"
+            }
+        }
+    }
+
     // MARK: - Private
 
     private static func isSeries(_ type: String) -> Bool {

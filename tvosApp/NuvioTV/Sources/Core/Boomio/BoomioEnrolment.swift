@@ -120,7 +120,12 @@ final class BoomioEnrolment: ObservableObject {
         else { return }
 
         task?.cancel()
+        // Announced synchronously, before the request goes out: a Home fetch
+        // that is refused certless while this is running must know to wait
+        // rather than give up, and the fetch can start in the same turn.
+        BoomioClientIdentity.shared.beginRegistration()
         task = Task { [weak self] in
+            defer { BoomioClientIdentity.shared.endRegistration() }
             guard let self else { return }
             do {
                 let identity = BoomioClientIdentity.shared
@@ -238,6 +243,11 @@ final class BoomioEnrolment: ObservableObject {
     ) async throws {
         let api = BoomioAPI(plane: plane)
         let identity = BoomioClientIdentity.shared
+        // Pair with the launch path: any request the edge refuses certless
+        // while this runs waits for the certificate instead of dropping its
+        // rows. `defer` covers throws and cancellation.
+        identity.beginRegistration()
+        defer { identity.endRegistration() }
 
         try Task.checkCancellation()
         guard isCurrent(run) else { return }

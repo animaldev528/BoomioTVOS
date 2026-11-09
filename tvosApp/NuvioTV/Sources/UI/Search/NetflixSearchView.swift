@@ -74,6 +74,11 @@ struct NetflixSearchView: View {
     let isActive: Bool
     let onContentClick: (String, String) -> Void
     var onLongPress: ((NuvioMeta) -> Void)? = nil
+    /// Opens a result with its full metadata, so an episode result can carry
+    /// its season/episode into Details.
+    var onOpenResult: ((NuvioMeta) -> Void)? = nil
+    /// Opens a person from the People row.
+    var onOpenPerson: ((TmdbPersonMetadata) -> Void)? = nil
 
     /// Separate list and poster focus IDs preserve overlay restoration in linear mode.
     @FocusState private var focusedItemID: String?
@@ -122,7 +127,9 @@ struct NetflixSearchView: View {
         detailsDidDisappearGeneration: UInt = 0,
         isActive: Bool = true,
         onContentClick: @escaping (String, String) -> Void,
-        onLongPress: ((NuvioMeta) -> Void)? = nil
+        onLongPress: ((NuvioMeta) -> Void)? = nil,
+        onOpenResult: ((NuvioMeta) -> Void)? = nil,
+        onOpenPerson: ((TmdbPersonMetadata) -> Void)? = nil
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
         self.showDiscover = showDiscover
@@ -131,6 +138,8 @@ struct NetflixSearchView: View {
         self.isActive = isActive
         self.onContentClick = onContentClick
         self.onLongPress = onLongPress
+        self.onOpenResult = onOpenResult
+        self.onOpenPerson = onOpenPerson
     }
 
     var body: some View {
@@ -834,6 +843,29 @@ struct NetflixSearchView: View {
         return viewModel.results.filter { !ContentReleasePolicy.isUnreleased($0) }
     }
 
+    /// Source rows with the same unreleased filter the grid applies, so the row
+    /// model and the flat list can never disagree about what is visible.
+    private var visibleSections: [CatalogSearchSection] {
+        let sections = viewModel.sections
+        guard hideUnreleased else { return sections }
+        return sections.compactMap { section in
+            let items = section.results.filter { !ContentReleasePolicy.isUnreleased($0) }
+            guard !items.isEmpty else { return nil }
+            return CatalogSearchSection(
+                id: section.id,
+                title: section.title,
+                addonName: section.addonName,
+                catalogId: section.catalogId,
+                type: section.type,
+                results: items
+            )
+        }
+    }
+
+    private var usesSourceRails: Bool {
+        visibleSections.count > 1 || (visibleSections.count == 1 && !viewModel.people.isEmpty)
+    }
+
     private var visibleResultIDs: [String] { visibleResults.map(\.id) }
 
     private var resultsCountLabel: String {
@@ -865,6 +897,8 @@ struct NetflixSearchView: View {
                     subtitle: reason.subtitle(for: viewModel.searchText)
                 )
             }
+        } else if usesSourceRails, let onOpenResult = onOpenResult {
+            sourceRails(onOpenResult)
         } else {
             resultsGrid
         }
@@ -891,6 +925,8 @@ struct NetflixSearchView: View {
                     subtitle: reason.subtitle(for: viewModel.searchText)
                 )
             }
+        } else if usesSourceRails, let onOpenResult = onOpenResult {
+            sourceRails(onOpenResult)
         } else {
             HStack(alignment: .top, spacing: NetflixSearchMetrics.columnGap) {
                 resultsList
@@ -970,6 +1006,20 @@ struct NetflixSearchView: View {
         .disabled(searchPresented && focusedTypeFilterID == nil && focusedItemID == nil)
         .focusSection()
         .defaultFocusIfAvailable($focusedItemID, defaultItemFocusID)
+    }
+
+    private func sourceRails(_ open: @escaping (NuvioMeta) -> Void) -> some View {
+        SearchResultsRails(
+            sections: visibleSections,
+            people: viewModel.people,
+            onSelectItem: { item in
+                viewModel.commitCurrentSearch()
+                open(item)
+            },
+            onFocusItem: { item in lastFocusedItemID = item.id },
+            onLongPressItem: onLongPress,
+            onSelectPerson: onOpenPerson
+        )
     }
 
     private var resultsGrid: some View {

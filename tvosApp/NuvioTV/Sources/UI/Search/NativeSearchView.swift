@@ -244,6 +244,11 @@ struct NativeSearchView: View {
     let isActive: Bool
     let onContentClick: (String, String) -> Void
     var onLongPress: ((NuvioMeta) -> Void)? = nil
+    /// Opens a result with its full metadata, so an episode result can carry
+    /// its season/episode into Details.
+    var onOpenResult: ((NuvioMeta) -> Void)? = nil
+    /// Opens a person from the People row.
+    var onOpenPerson: ((TmdbPersonMetadata) -> Void)? = nil
 
     @AppStorage("nuvio.keyboard.detectedLayout") private var detectedKeyboardMode: TVOSKeyboardLayoutMode = .linear
 
@@ -294,7 +299,9 @@ struct NativeSearchView: View {
         detailsDidDisappearGeneration: UInt = 0,
         isActive: Bool = true,
         onContentClick: @escaping (String, String) -> Void,
-        onLongPress: ((NuvioMeta) -> Void)? = nil
+        onLongPress: ((NuvioMeta) -> Void)? = nil,
+        onOpenResult: ((NuvioMeta) -> Void)? = nil,
+        onOpenPerson: ((TmdbPersonMetadata) -> Void)? = nil
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
         self.showDiscover = showDiscover
@@ -304,6 +311,8 @@ struct NativeSearchView: View {
         self.isActive = isActive
         self.onContentClick = onContentClick
         self.onLongPress = onLongPress
+        self.onOpenResult = onOpenResult
+        self.onOpenPerson = onOpenPerson
     }
 
     var body: some View {
@@ -896,6 +905,29 @@ struct NativeSearchView: View {
         return viewModel.results.filter { !ContentReleasePolicy.isUnreleased($0) }
     }
 
+    /// Source rows with the same unreleased filter the grid applies, so the row
+    /// model and the flat list can never disagree about what is visible.
+    private var visibleSections: [CatalogSearchSection] {
+        let sections = viewModel.sections
+        guard hideUnreleased else { return sections }
+        return sections.compactMap { section in
+            let items = section.results.filter { !ContentReleasePolicy.isUnreleased($0) }
+            guard !items.isEmpty else { return nil }
+            return CatalogSearchSection(
+                id: section.id,
+                title: section.title,
+                addonName: section.addonName,
+                catalogId: section.catalogId,
+                type: section.type,
+                results: items
+            )
+        }
+    }
+
+    private var usesSourceRails: Bool {
+        visibleSections.count > 1 || (visibleSections.count == 1 && !viewModel.people.isEmpty)
+    }
+
     private var visibleResultIDs: [String] { visibleResults.map(\.id) }
 
     private var gridSuggestionTitles: [String] {
@@ -935,6 +967,18 @@ struct NativeSearchView: View {
                     subtitle: reason.subtitle(for: viewModel.searchText)
                 )
             }
+        } else if usesSourceRails, let onOpenResult = onOpenResult {
+            SearchResultsRails(
+                sections: visibleSections,
+                people: viewModel.people,
+                onSelectItem: { item in
+                    viewModel.commitCurrentSearch()
+                    onOpenResult(item)
+                },
+                onFocusItem: { item in lastFocusedResultID = item.id },
+                onLongPressItem: onLongPress,
+                onSelectPerson: onOpenPerson
+            )
         } else {
             resultsGrid(isGridMode: isGridMode)
         }

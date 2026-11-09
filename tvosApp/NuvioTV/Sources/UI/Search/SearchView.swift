@@ -24,6 +24,12 @@ struct SearchView: View {
     let showDiscover: Bool
     let onContentClick: (String, String) -> Void
     var onLongPress: ((NuvioMeta) -> Void)? = nil
+    /// Opens a result with its full metadata, so an episode result can carry
+    /// its season/episode into Details. Falls back to `onContentClick` when
+    /// absent (previews, older call sites).
+    var onOpenResult: ((NuvioMeta) -> Void)? = nil
+    /// Opens a person from the People row.
+    var onOpenPerson: ((TmdbPersonMetadata) -> Void)? = nil
 
     @FocusState private var searchBarFocused: Bool
     @FocusState private var focusedResultID: String?
@@ -48,11 +54,20 @@ struct SearchView: View {
     @AppStorage(SettingsKey.bodyColor) private var bodyColor = SettingsBackground.charcoal.rawValue
     @AppStorage(SettingsKey.hideUnreleased) private var hideUnreleased = false
 
-    init(viewModel: SearchViewModel, showDiscover: Bool = true, onContentClick: @escaping (String, String) -> Void, onLongPress: ((NuvioMeta) -> Void)? = nil) {
+    init(
+        viewModel: SearchViewModel,
+        showDiscover: Bool = true,
+        onContentClick: @escaping (String, String) -> Void,
+        onLongPress: ((NuvioMeta) -> Void)? = nil,
+        onOpenResult: ((NuvioMeta) -> Void)? = nil,
+        onOpenPerson: ((TmdbPersonMetadata) -> Void)? = nil
+    ) {
         _viewModel = StateObject(wrappedValue: viewModel)
         self.showDiscover = showDiscover
         self.onContentClick = onContentClick
         self.onLongPress = onLongPress
+        self.onOpenResult = onOpenResult
+        self.onOpenPerson = onOpenPerson
     }
 
     var body: some View {
@@ -257,6 +272,29 @@ struct SearchView: View {
         return viewModel.results.filter { !ContentReleasePolicy.isUnreleased($0) }
     }
 
+    /// Source rows with the same unreleased filter the grid applies, so the row
+    /// model and the flat list can never disagree about what is visible.
+    private var visibleSections: [CatalogSearchSection] {
+        let sections = viewModel.sections
+        guard hideUnreleased else { return sections }
+        return sections.compactMap { section in
+            let items = section.results.filter { !ContentReleasePolicy.isUnreleased($0) }
+            guard !items.isEmpty else { return nil }
+            return CatalogSearchSection(
+                id: section.id,
+                title: section.title,
+                addonName: section.addonName,
+                catalogId: section.catalogId,
+                type: section.type,
+                results: items
+            )
+        }
+    }
+
+    private var usesSourceRails: Bool {
+        visibleSections.count > 1 || (visibleSections.count == 1 && !viewModel.people.isEmpty)
+    }
+
     @ViewBuilder
     private var resultsContainer: some View {
         if viewModel.isLoading {
@@ -278,6 +316,18 @@ struct SearchView: View {
                     subtitle: reason.subtitle(for: viewModel.searchText)
                 )
             }
+        } else if usesSourceRails, let onOpenResult {
+            SearchResultsRails(
+                sections: visibleSections,
+                people: viewModel.people,
+                onSelectItem: { item in
+                    viewModel.commitCurrentSearch()
+                    onOpenResult(item)
+                },
+                onFocusItem: { item in lastFocusedResultID = item.id },
+                onLongPressItem: onLongPress,
+                onSelectPerson: onOpenPerson
+            )
         } else {
             resultsGrid
         }

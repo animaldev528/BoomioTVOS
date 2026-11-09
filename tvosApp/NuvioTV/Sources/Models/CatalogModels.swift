@@ -276,6 +276,56 @@ struct NuvioMeta: Identifiable, Codable, Equatable, Hashable, Sendable {
         return "tt\(candidate.dropFirst(2))"
     }
 
+    /// Season/episode identity carried by an episode-scoped meta id
+    /// (`tt0096697:5:4`).
+    ///
+    /// Search catalogs that return individual episodes (bsf's
+    /// `ai-search-episodes`) key each tile by the full Stremio video id.
+    /// `canonicalImdbID(from:)` rejects that shape because it is not a bare
+    /// IMDb id, so the identity is PARSED here rather than inferred from a
+    /// field the add-on may or may not send.
+    struct EpisodeIdentity: Equatable, Hashable, Sendable {
+        let showId: String
+        let season: Int
+        let episode: Int
+
+        /// "S5E4" — the short form tvOS tiles use beside the year.
+        var label: String { "S\(season)E\(episode)" }
+    }
+
+    /// Splits `showId:season:episode` ids. Returns nil for show/movie ids,
+    /// whose trailing components are not two non-negative integers.
+    static func episodeIdentity(from value: String) -> EpisodeIdentity? {
+        let parts = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: ":", omittingEmptySubsequences: true)
+            .map(String.init)
+        guard parts.count >= 3,
+              let season = Int(parts[parts.count - 2]),
+              let episode = Int(parts[parts.count - 1]),
+              season >= 0, episode > 0
+        else { return nil }
+        let showId = parts.dropLast(2).joined(separator: ":")
+        guard !showId.isEmpty else { return nil }
+        return EpisodeIdentity(showId: showId, season: season, episode: episode)
+    }
+
+    var episodeIdentity: EpisodeIdentity? { Self.episodeIdentity(from: id) }
+
+    /// True when this meta is one episode rather than a title. Episode results
+    /// must never be merged into their show's poster in search.
+    var isEpisodeResult: Bool { episodeIdentity != nil }
+
+    /// "1989 · S5E4" for an episode tile; nil for a title.
+    var episodeTileSubtitle: String? {
+        guard let identity = episodeIdentity else { return nil }
+        let prefix = trimmedNonEmpty(releaseInfo)
+            ?? year.map(String.init)
+            ?? trimmedNonEmpty(released).map { String($0.prefix(4)) }
+        guard let prefix, !prefix.isEmpty else { return identity.label }
+        return "\(prefix) · \(identity.label)"
+    }
+
     /// Canonical stream lookup id: the additive-imdb id when known (what stream
     /// add-ons declare in their `idPrefixes`), otherwise the meta id. Items can
     /// carry non-canonical ids ("tmdb:123", "simkl:42") which stream add-ons do

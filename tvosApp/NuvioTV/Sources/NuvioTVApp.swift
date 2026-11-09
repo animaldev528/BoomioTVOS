@@ -3113,10 +3113,55 @@ struct ContentView: View {
                 // Home defers its focus-restoration render until Details closes,
                 // so every tab can now use the same presentation transaction.
                 withAnimation(.easeInOut(duration: 0.28)) {
-                    openDetailsRoot(
-                        id: contentId, type: contentType,
-                        collectionContext: collectionContext(id: contentId, type: contentType, folder: selectedCollectionFolder)
-                    )
+                    // Search can hand us an episode id (`show:season:episode`)
+                    // from an add-on episodes catalog even in the single-grid
+                    // presentation; open that episode, not season 1 of the show.
+                    if let episode = NuvioMeta.episodeIdentity(from: contentId) {
+                        openDetailsRoot(
+                            id: episode.showId,
+                            type: "series",
+                            focusEpisode: DetailsEpisodeFocus(
+                                metaID: episode.showId,
+                                season: episode.season,
+                                episode: episode.episode
+                            )
+                        )
+                    } else {
+                        openDetailsRoot(
+                            id: contentId, type: contentType,
+                            collectionContext: collectionContext(id: contentId, type: contentType, folder: selectedCollectionFolder)
+                        )
+                    }
+                }
+            },
+            onOpenSearchResult: { meta in
+                // An episode result already knows which episode it is; opening
+                // the bare show would land on season 1 instead.
+                withAnimation(.easeInOut(duration: 0.28)) {
+                    if let episode = meta.episodeIdentity {
+                        openDetailsRoot(
+                            id: episode.showId,
+                            type: "series",
+                            focusEpisode: DetailsEpisodeFocus(
+                                metaID: episode.showId,
+                                season: episode.season,
+                                episode: episode.episode
+                            )
+                        )
+                    } else {
+                        openDetailsRoot(
+                            id: meta.id, type: meta.type,
+                            collectionContext: collectionContext(id: meta.id, type: meta.type, folder: selectedCollectionFolder)
+                        )
+                    }
+                }
+            },
+            onOpenSearchPerson: { person in
+                // A person reached from Search has no Details page to return
+                // to, so Back from the filmography goes to Search.
+                personBrowseReturn = nil
+                withAnimation(.easeInOut(duration: 0.28)) {
+                    activeScreen = .personBrowse(person)
                 }
             },
             onNavigateToLibraryDetails: { contentId, contentType, watchedContext in
@@ -4525,6 +4570,12 @@ private struct TVMainTabView: View {
     let onSignIn: () -> Void
     let onSignOut: () -> Void
     let onNavigateToDetails: (String, String) -> Void
+    /// Search results can carry an episode's own identity: an add-on episodes
+    /// catalog returns `show:season:episode` ids, which `onNavigateToDetails`
+    /// would flatten into the show. Search hands those here so Details opens on
+    /// the episode itself, and a People result opens the filmography.
+    let onOpenSearchResult: (NuvioMeta) -> Void
+    let onOpenSearchPerson: (TmdbPersonMetadata) -> Void
     var onNavigateToLibraryDetails: ((String, String, LibraryWatchedContext) -> Void)? = nil
     let onPlayTitle: (String, String) -> Void
     let onRequestAccountRefresh: (Bool) -> Void
@@ -4594,7 +4645,9 @@ private struct TVMainTabView: View {
                 viewModel: searchViewModel,
                 showDiscover: discoverLocation == "Search",
                 onContentClick: onNavigateToDetails,
-                onLongPress: onLongPressCard
+                onLongPress: onLongPressCard,
+                onOpenResult: onOpenSearchResult,
+                onOpenPerson: onOpenSearchPerson
             )
         } else if searchStyle == "Grid" {
             NativeSearchView(
@@ -4605,7 +4658,9 @@ private struct TVMainTabView: View {
                 detailsDidDisappearGeneration: detailsDidDisappearGeneration,
                 isActive: selectedTab == .search,
                 onContentClick: onNavigateToDetails,
-                onLongPress: onLongPressCard
+                onLongPress: onLongPressCard,
+                onOpenResult: onOpenSearchResult,
+                onOpenPerson: onOpenSearchPerson
             )
         } else if searchStyle == "Native" {
             NativeSearchView(
@@ -4616,7 +4671,9 @@ private struct TVMainTabView: View {
                 detailsDidDisappearGeneration: detailsDidDisappearGeneration,
                 isActive: selectedTab == .search,
                 onContentClick: onNavigateToDetails,
-                onLongPress: onLongPressCard
+                onLongPress: onLongPressCard,
+                onOpenResult: onOpenSearchResult,
+                onOpenPerson: onOpenSearchPerson
             )
         } else {
             NetflixSearchView(
@@ -4626,7 +4683,9 @@ private struct TVMainTabView: View {
                 detailsDidDisappearGeneration: detailsDidDisappearGeneration,
                 isActive: selectedTab == .search,
                 onContentClick: onNavigateToDetails,
-                onLongPress: onLongPressCard
+                onLongPress: onLongPressCard,
+                onOpenResult: onOpenSearchResult,
+                onOpenPerson: onOpenSearchPerson
             )
         }
     }
