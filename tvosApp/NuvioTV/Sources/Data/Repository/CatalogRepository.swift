@@ -4062,3 +4062,271 @@ class MockCatalogRepository: CatalogRepository {
         )
     }
 }
+
+// MARK: - Movies / TV / Anime hubs
+
+/// One add-on catalog a hub browses, before its rows are loaded.
+struct TVHubCatalogSource: Identifiable {
+    let addonId: String
+    let addonName: String
+    let baseURL: URL
+    let type: String
+    let catalogId: String
+    let name: String
+    /// A required genre is satisfied with the catalog's first declared option.
+    let genre: String?
+
+    var id: String { "\(addonId)|\(type)|\(catalogId)" }
+    var isHub: Bool { catalogId.lowercased().hasPrefix("hub-") }
+}
+
+/// One row inside a hub section. The section is the add-on catalog (a
+/// `hub-*` group, or a plain catalog); each drill tile's own catalog is a row.
+struct TVHubSectionRow: Identifiable {
+    let id: String
+    let title: String
+    let catalogId: String
+    let items: [NuvioMeta]
+    let addonName: String
+}
+
+struct TVHubSection: Identifiable {
+    let id: String
+    let title: String
+    let addonName: String
+    var rows: [TVHubSectionRow]
+}
+
+extension CinemetaCatalogRepository {
+    /// The catalogs a hub browses, in the order the Android client draws them
+    /// (`HubBrowseViewModel.kt`): `hub-*` sections by category rank, then the
+    /// manifest's own catalogs of that kind so nothing previously reachable
+    /// disappears. Search-only and featured/Home catalogs stay on Home.
+    func hubCatalogSources(kind: TVHubKind) async -> [TVHubCatalogSource] {
+        let manifestURLs = Self.configuredStreamAddonManifestURLs
+        guard !manifestURLs.isEmpty else { return [] }
+        let manifests = await loadManifestsConcurrently(urls: manifestURLs)
+        let deleted = TVHomeCatalogOrder.deletedCatalogKeys()
+        var hubSources: [TVHubCatalogSource] = []
+        var plainSources: [TVHubCatalogSource] = []
+
+        for manifestURL in manifestURLs {
+            guard let manifest = manifests[manifestURL],
+                  manifest.id != Self.cinemetaAddonId else { continue }
+            let base = manifestURL.lastPathComponent.lowercased() == "manifest.json"
+                ? manifestURL.deletingLastPathComponent()
+                : manifestURL
+            let addonName = Self.streamAddonDisplayName(for: manifestURL, manifestName: manifest.displayName)
+            for catalog in manifest.catalogs ?? [] {
+                guard Self.hubCatalog(catalog, matches: kind) else { continue }
+                guard !Self.isSearchOnlyCatalog(catalog) else { continue }
+                // Featured/curated catalogs stay on Home, not the hubs.
+                guard !Self.isFeaturedHomeCatalog(catalog) else { continue }
+                if catalog.requiresGenre, catalog.firstGenreOption == nil { continue }
+                let settingsKey = TVHomeCatalogOrder.catalogSettingsKey(
+                    addonId: manifest.id,
+                    contentType: catalog.type,
+                    catalogId: catalog.id
+                )
+                let rowId = "addon_\(manifest.id)_\(catalog.type)_\(catalog.id)"
+                if deleted.contains(settingsKey) || deleted.contains(rowId) { continue }
+                let source = TVHubCatalogSource(
+                    addonId: manifest.id,
+                    addonName: addonName,
+                    baseURL: base,
+                    type: catalog.type,
+                    catalogId: catalog.id,
+                    name: catalog.name?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                        ?? catalog.id,
+                    genre: catalog.requiresGenre ? catalog.firstGenreOption : nil
+                )
+                if source.isHub { hubSources.append(source) } else { plainSources.append(source) }
+            }
+        }
+
+        // Stable within a rank (`sorted(by:)` is not), so a manifest that lists
+        // two genre groups keeps its own order.
+        let hubs = hubSources.enumerated()
+            .sorted { lhs, rhs in
+                let l = Self.hubSectionRank(lhs.element.catalogId)
+                let r = Self.hubSectionRank(rhs.element.catalogId)
+                return l != r ? l < r : lhs.offset < rhs.offset
+            }
+            .map(\.element)
+        return hubs + plainSources
+    }
+
+    /// Loads one hub section. A `hub-*` catalog is reached through its
+    /// drilldown (`rec-<rowId>-drilldown`), whose tiles name the sub-row
+    /// catalogs; a plain catalog is one row of its own content. A section that
+    /// produced no row is dropped, never shipped blank.
+    func hubSection(for source: TVHubCatalogSource) async -> TVHubSection? {
+        let rows: [TVHubSectionRow]
+        if source.isHub {
+            rows = await hubDrillRows(for: source)
+        } else if let items = await hubItems(
+            source, catalogId: source.catalogId, type: source.type, genre: source.genre
+        ), !items.isEmpty {
+            rows = [TVHubSectionRow(
+                // Add-on in the key as well as the catalog: two add-ons can
+                // serve a catalog with the same id, and duplicate SwiftUI ids
+                // would drop or misplace a row.
+                id: "\(source.addonId)|\(source.catalogId)|\(source.catalogId)",
+                title: source.name,
+                catalogId: source.catalogId,
+                items: items,
+                addonName: source.addonName
+            )]
+        } else {
+            rows = []
+        }
+        guard !rows.isEmpty else { return nil }
+        let allItems = rows.flatMap(\.items)
+        if !allItems.isEmpty {
+            cacheMetadata(allItems, context: Self.metadataCacheContext)
+        }
+        return TVHubSection(
+            id: source.id,
+            title: source.name,
+            addonName: source.addonName,
+            rows: rows
+        )
+    }
+
+    private func hubDrillRows(for source: TVHubCatalogSource) async -> [TVHubSectionRow] {
+        let rowId = source.catalogId.lowercased().hasPrefix("hub-")
+            ? String(source.catalogId.dropFirst(4))
+            : source.catalogId
+        let tiles = await hubItems(
+            source,
+            catalogId: "rec-\(rowId)-drilldown",
+            type: source.type,
+            genre: nil
+        ) ?? []
+
+        guard !tiles.isEmpty else {
+            // No drill tiles: the hub catalog's own merged grid is the section.
+            let items = await hubItems(
+                source, catalogId: source.catalogId, type: source.type, genre: source.genre
+            ) ?? []
+            guard !items.isEmpty else { return [] }
+            return [TVHubSectionRow(
+                id: "\(source.catalogId)|\(source.catalogId)",
+                title: source.name,
+                catalogId: source.catalogId,
+                items: items,
+                addonName: source.addonName
+            )]
+        }
+
+        // Each drill tile is itself a catalog. Load them in small batches:
+        // serial would spend a minute per section, and one wide burst is what
+        // the add-on hosts throttle. Row order stays the drill's own order.
+        var loaded = [TVHubSectionRow?](repeating: nil, count: tiles.count)
+        let batchSize = 4
+        var start = 0
+        while start < tiles.count {
+            guard !Task.isCancelled else { break }
+            let end = min(start + batchSize, tiles.count)
+            let batch = Array(tiles[start..<end])
+            let offset = start
+            await withTaskGroup(of: (Int, TVHubSectionRow?).self) { group in
+                for (index, tile) in batch.enumerated() {
+                    group.addTask { [source] in
+                        let tileType = tile.type.isEmpty ? source.type : tile.type
+                        guard let items = await self.hubItems(
+                            source, catalogId: tile.id, type: tileType, genre: nil
+                        ), !items.isEmpty else { return (offset + index, nil) }
+                        return (offset + index, TVHubSectionRow(
+                            id: "\(source.addonId)|\(source.catalogId)|\(tile.id)",
+                            title: tile.name,
+                            catalogId: tile.id,
+                            items: items,
+                            addonName: source.addonName
+                        ))
+                    }
+                }
+                for await (index, row) in group {
+                    loaded[index] = row
+                }
+            }
+            start = end
+        }
+        return loaded.compactMap { $0 }
+    }
+
+    /// One catalog's titles. The trailing `rec-drill:<rowId>` tile is a link to
+    /// the drilldown, not a title, so it never reaches a row.
+    private func hubItems(
+        _ source: TVHubCatalogSource,
+        catalogId: String,
+        type: String,
+        genre: String?
+    ) async -> [NuvioMeta]? {
+        guard let items = try? await fetchCatalog(
+            sourceBaseURL: source.baseURL,
+            type: type,
+            catalogId: catalogId,
+            skip: nil,
+            search: nil,
+            genre: genre
+        ) else { return nil }
+        return items.filter { !$0.id.lowercased().hasPrefix("rec-drill:") }
+    }
+
+    private static func hubCatalog(_ catalog: AddonManifestCatalog, matches kind: TVHubKind) -> Bool {
+        let isAnimeHub = catalog.id.lowercased().hasPrefix("hub-anim")
+        switch kind {
+        case .movies:
+            return catalog.type.caseInsensitiveCompare("movie") == .orderedSame && !isAnimeHub
+        case .tv:
+            return isSeriesType(catalog.type) && !isAnimeHub
+        case .anime:
+            // An id prefix, not a type: `hub-anim*` is served only here.
+            return isAnimeHub
+        }
+    }
+
+    /// Android's ribbon order: genre → year → documentary → network →
+    /// superhero → extras → studios; anything else (Made for You, kids walls)
+    /// after those.
+    static func hubSectionRank(_ catalogId: String) -> Int {
+        var id = catalogId.lowercased()
+        if id.hasPrefix("hub-") { id.removeFirst(4) }
+        if id.hasPrefix("genre") { return 0 }
+        if id.hasPrefix("year") { return 1 }
+        if id.hasPrefix("documentary") { return 2 }
+        if id.hasPrefix("network") { return 3 }
+        if id.hasPrefix("superhero") { return 4 }
+        if id.hasPrefix("extras") { return 5 }
+        if id.hasPrefix("studios") { return 6 }
+        return 7
+    }
+
+    /// Mirrors Android's `isSearchOnlyCatalog()`: only the object form with
+    /// `name: "search", isRequired: true` is a search-only catalog.
+    private static func isSearchOnlyCatalog(_ catalog: AddonManifestCatalog) -> Bool {
+        (catalog.extra ?? []).contains {
+            $0.name.caseInsensitiveCompare("search") == .orderedSame && $0.isRequired == true
+        }
+    }
+
+    private static let featuredHomeCatalogIDPrefixes: Set<String> = ["rec-"]
+    private static let featuredHomeCatalogIDs: Set<String> = ["golden-age"]
+    private static let featuredHomeCatalogNameKeywords: Set<String> = [
+        "popular", "trending", "top", "new", "upcoming", "recent",
+        "watchlist", "recommended", "rec", "discover", "hot",
+    ]
+
+    /// Mirrors Android's `isFeaturedHomeCatalog()`: these rows belong to Home,
+    /// and the hubs deliberately do not mirror it.
+    private static func isFeaturedHomeCatalog(_ catalog: AddonManifestCatalog) -> Bool {
+        let rawType = catalog.type.lowercased()
+        if rawType == "collection" || rawType == "anime" { return true }
+        let id = catalog.id.lowercased()
+        if featuredHomeCatalogIDPrefixes.contains(where: { id.hasPrefix($0) }) { return true }
+        if featuredHomeCatalogIDs.contains(id) { return true }
+        let name = (catalog.name ?? "").lowercased()
+        return featuredHomeCatalogNameKeywords.contains { name.contains($0) }
+    }
+}

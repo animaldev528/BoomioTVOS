@@ -594,3 +594,37 @@ private struct DiscoverCard: View {
         focused || retainFocusAppearance
     }
 }
+
+/// Discover as a sidebar destination (Settings → Layout & Discovery →
+/// Discover Entry → In Sidebar). The same `DiscoverSection` the Search tab
+/// hosts, given a page title and the full tab.
+struct DiscoverTabView: View {
+    let isActive: Bool
+    let onNavigateToDetails: (String, String) -> Void
+    let onLongPressCard: (NuvioMeta) -> Void
+
+    @State private var transitionActive = false
+
+    var body: some View {
+        Group {
+            if isActive {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(L10n.string("nav_discover", fallback: "Discover"))
+                        .font(.appFont(size: 34, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, TVLayout.rowLeading)
+                        .padding(.top, 24)
+                        .padding(.bottom, 8)
+                    DiscoverSection(
+                        onContentClick: onNavigateToDetails,
+                        onLongPress: onLongPressCard,
+                        parentTransitionActive: $transitionActive
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                }
+            } else {
+                Color.clear
+            }
+        }
+    }
+}

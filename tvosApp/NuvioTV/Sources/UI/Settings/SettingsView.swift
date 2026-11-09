@@ -4030,7 +4030,7 @@ private struct LayoutDiscoverySettingsView: View {
     private let layouts = ["Modern", "Grid View", "Compact"]
     // Search is the only screen that currently hosts the full Discover surface.
     // Do not offer Home/Library as dead selections that merely hide Discover.
-    private let discoverLocations = ["Search", "Off"]
+    private let discoverLocations = ["Search", "In Sidebar", "Off"]
     private let searchStyles = ["Netflix", "Classic", "Native", "Grid"]
     private let continueWatchingSorts = ["Default", "Streaming Style", "Separate Upcoming Row"]
 
