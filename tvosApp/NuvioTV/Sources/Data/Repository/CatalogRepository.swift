@@ -3127,12 +3127,21 @@ final class CinemetaCatalogRepository: CatalogRepository {
         var request = URLRequest(url: url)
         request.timeoutInterval = 8
         request.setValue("Mozilla/5.0 (AppleTV; tvOS 18.0) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
-        let (data, response) = try await Self.sessionForRequests.data(for: request)
-        guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
+        var result = try await Self.sessionForRequests.data(for: request)
+        // The same startup race the manifest cache handles: a row request that
+        // goes out certless is refused 403 on the enrolled box until
+        // presentation arms. Wait for the certificate, then ask once more.
+        if (result.1 as? HTTPURLResponse)?.statusCode == 403,
+           let host = url.host,
+           await BoomioClientIdentity.shared.waitForPresentation(for: host) {
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            result = try await Self.sessionForRequests.data(for: request)
+        }
+        guard let http = result.1 as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             throw URLError(.badServerResponse)
         }
         // Each concurrent add-on request gets its own decoder.
-        return try JSONDecoder().decode(T.self, from: data)
+        return try JSONDecoder().decode(T.self, from: result.0)
     }
 }
 
