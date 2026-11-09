@@ -109,8 +109,8 @@ fi
 
 (
   cd "$OUTPUT_DIR"
-  zip -qry "NuvioTV-unsigned.ipa" Payload
-  cp "NuvioTV-unsigned.ipa" "NuvioTV-${VERSION}-unsigned-release.ipa"
+  zip -qry "BoomioTV-unsigned.ipa" Payload
+  cp "BoomioTV-unsigned.ipa" "BoomioTV-${VERSION}-unsigned-release.ipa"
 )
 
 echo "==> Unsigned IPA created successfully:"
