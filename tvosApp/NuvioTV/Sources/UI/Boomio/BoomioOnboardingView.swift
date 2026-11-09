@@ -256,7 +256,8 @@ struct BoomioOnboardingView: View {
     @ViewBuilder
     private var confirmStep: some View {
         if let discovered {
-            VStack(alignment: .leading, spacing: 18) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
                 Text(L10n.string(
                     "boomio_setup_confirm_help",
                     fallback: "This address answered as a Boomio server. Pairing sends this TV's identity to it, so confirm it is yours."
@@ -311,6 +312,7 @@ struct BoomioOnboardingView: View {
                 ) {
                     step = .server
                 }
+                }
             }
         } else {
             busy(L10n.string("auth_checking_server", fallback: "Checking Server…"))
@@ -323,56 +325,63 @@ struct BoomioOnboardingView: View {
     private var pairStep: some View {
         switch enrolment.stage {
         case .pairing(let userCode, let verificationURI):
-            VStack(alignment: .leading, spacing: 22) {
-                Text(L10n.string(
-                    "boomio_setup_pair_help",
-                    fallback: "Enter this code in your phone's Boomio app, or open the address below on any device that is signed in."
-                ))
-                    .font(.system(size: 20))
-                    .foregroundColor(.white.opacity(0.7))
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if let advertNote {
-                    Text(advertNote)
-                        .font(.system(size: 15, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.45))
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    Text(L10n.string(
+                        "boomio_setup_pair_help",
+                        fallback: "Enter this code in your phone's Boomio app, or open the address below on any device that is signed in."
+                    ))
+                        .font(.system(size: 20))
+                        .foregroundColor(.white.opacity(0.7))
                         .fixedSize(horizontal: false, vertical: true)
-                }
 
-                Text(userCode)
-                    .font(.system(size: 72, weight: .bold, design: .monospaced))
-                    .tracking(8)
-                    .foregroundColor(.white)
-
-                HStack(alignment: .top, spacing: 28) {
-                    if let image = QRCode.image(from: verificationURI.absoluteString, scale: 10) {
-                        Image(uiImage: image)
-                            .interpolation(.none)
-                            .resizable()
-                            .frame(width: 220, height: 220)
-                            .background(Color.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    if let advertNote {
+                        Text(advertNote)
+                            .font(.system(size: 15, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.45))
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text(verificationURI.absoluteString)
-                            .font(.system(size: 18, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.75))
-                            .lineLimit(2)
-                        HStack(spacing: 12) {
-                            ProgressView()
-                            Text(L10n.string("boomio_setup_waiting", fallback: "Waiting for approval…"))
-                                .font(.system(size: 18))
-                                .foregroundColor(.white.opacity(0.7))
+
+                    Text(userCode)
+                        .font(.system(size: 56, weight: .bold, design: .monospaced))
+                        .tracking(4)
+                        .foregroundColor(.white)
+
+                    // Directly under the code, and therefore the first focusable
+                    // control: with the QR below it this used to be pushed past
+                    // the bottom of the screen on a real TV, and the remote had
+                    // nothing to move down to. The Menu button is the same exit
+                    // (onExitCommand), but a visible control must be reachable.
+                    LoginButton(
+                        title: L10n.string("action_cancel", fallback: "Cancel"),
+                        systemImage: "xmark"
+                    ) {
+                        enrolment.cancel()
+                        step = .server
+                    }
+
+                    HStack(alignment: .top, spacing: 28) {
+                        if let image = QRCode.image(from: verificationURI.absoluteString, scale: 10) {
+                            Image(uiImage: image)
+                                .interpolation(.none)
+                                .resizable()
+                                .frame(width: 180, height: 180)
+                                .background(Color.white)
+                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        }
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text(verificationURI.absoluteString)
+                                .font(.system(size: 18, design: .monospaced))
+                                .foregroundColor(.white.opacity(0.75))
+                                .lineLimit(2)
+                            HStack(spacing: 12) {
+                                ProgressView()
+                                Text(L10n.string("boomio_setup_waiting", fallback: "Waiting for approval…"))
+                                    .font(.system(size: 18))
+                                    .foregroundColor(.white.opacity(0.7))
+                            }
                         }
                     }
-                }
-
-                LoginButton(
-                    title: L10n.string("action_cancel", fallback: "Cancel"),
-                    systemImage: "xmark"
-                ) {
-                    enrolment.cancel()
-                    step = .server
                 }
             }
         case .registering:
