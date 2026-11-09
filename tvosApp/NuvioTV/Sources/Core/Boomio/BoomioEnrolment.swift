@@ -118,6 +118,9 @@ final class BoomioEnrolment: ObservableObject {
                 sessionToken: token
             )
             certificateFingerprint = reply.fingerprint_sha256
+            if let host = plane.expectedServiceHost {
+                BoomioClientIdentity.shared.markRegistered(host: host)
+            }
             stage = .ready
         } catch {
             stage = .failed(error.localizedDescription)
@@ -208,6 +211,11 @@ final class BoomioEnrolment: ObservableObject {
         )
         guard isCurrent(run) else { return }
         certificateFingerprint = reply.fingerprint_sha256
+        // The edge lists the leaf from here on, so later requests may present
+        // it. `markRegistered` waits out the edge's allow-list cache.
+        if let host = plane.expectedServiceHost {
+            identity.markRegistered(host: host)
+        }
 
         try Task.checkCancellation()
         guard isCurrent(run) else { return }
@@ -260,6 +268,11 @@ final class BoomioEnrolment: ObservableObject {
 
     private func clearSession() {
         sessionToken = nil
+        // Presentation rides on the same trust as the session: a 401/403
+        // means the box no longer knows this device, so the leaf it would
+        // present may already be refused by the edge. Pairing and
+        // re-registration both work certless.
+        BoomioClientIdentity.shared.suspendPresentation()
         if let account = sessionAccount {
             BoomioSecureStore.remove(account)
         }

@@ -164,7 +164,7 @@ final class BoomioAPI {
             request.httpBody = try JSONEncoder().encode(body)
         }
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await send(request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             // The box classifies refusals by status (403 revoked, 400 invalid,
@@ -179,5 +179,39 @@ final class BoomioAPI {
     private struct ServerError: Decodable {
         let error: String?
         let code: String?
+    }
+
+    /// One retry without the client certificate when the edge refused the
+    /// handshake.
+    ///
+    /// A presented certificate the allow-list does not carry — revoked, dropped
+    /// by a box reset, or written seconds ago and not yet re-read by the
+    /// verifier's 30 s cache — fails before any HTTP status exists, so it
+    /// cannot be recognised by status code. Every call this API makes is
+    /// admitted certless, and a successful `/overlay/cert` re-arms
+    /// presentation, so dropping the certificate for one retry is always the
+    /// correct recovery.
+    private func send(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        do {
+            return try await session.data(for: request)
+        } catch let error as URLError where Self.isCertificateRejection(error) {
+            guard BoomioClientIdentity.shared.suspendPresentation() else { throw error }
+            return try await session.data(for: request)
+        }
+    }
+
+    private static func isCertificateRejection(_ error: URLError) -> Bool {
+        switch error.code {
+        case .clientCertificateRejected,
+             .clientCertificateRequired,
+             .secureConnectionFailed,
+             .serverCertificateHasBadDate,
+             .serverCertificateUntrusted,
+             .serverCertificateHasUnknownRoot,
+             .serverCertificateNotYetValid:
+            return true
+        default:
+            return false
+        }
     }
 }

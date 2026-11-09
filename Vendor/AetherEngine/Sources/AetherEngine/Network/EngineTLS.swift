@@ -31,6 +31,24 @@ public enum EngineTLS {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var _evaluator: (@Sendable (URLProtectionSpace) -> Bool)?
 
+    /// The client certificate to present, decided per origin.
+    ///
+    /// The engine owns its media fetches — the demuxer's AVIO reader, HLS
+    /// ingest, the prewarm and carriage probes — so a server that keys access
+    /// on the presented leaf (a device certificate on a media plane) can only
+    /// see it if these sessions present it. nil, the default, leaves every
+    /// client-certificate challenge to default handling, which presents
+    /// nothing.
+    ///
+    /// Read per challenge, so the host can arm it after enrolment without
+    /// rebuilding sessions. Called off the main actor, from whichever queue
+    /// raised the challenge.
+    public static var clientCertificateCredential: (@Sendable (URLProtectionSpace) -> URLCredential?)? {
+        get { lock.lock(); defer { lock.unlock() }; return _clientCredential }
+        set { lock.lock(); _clientCredential = newValue; lock.unlock() }
+    }
+    nonisolated(unsafe) private static var _clientCredential: (@Sendable (URLProtectionSpace) -> URLCredential?)?
+
     /// Session-level delegate for the owned sessions that otherwise run
     /// without one (disc reader, HLS ingest readers, audio tap fetcher,
     /// carriage probe, subtitle proxy, live rendition fetch) and the fallback
@@ -49,6 +67,12 @@ public enum EngineTLS {
         _ challenge: URLAuthenticationChallenge,
         completionHandler: (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
+        if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodClientCertificate,
+           let provider = clientCertificateCredential,
+           let credential = provider(challenge.protectionSpace) {
+            completionHandler(.useCredential, credential)
+            return
+        }
         guard
             challenge.protectionSpace.authenticationMethod
                 == NSURLAuthenticationMethodServerTrust,

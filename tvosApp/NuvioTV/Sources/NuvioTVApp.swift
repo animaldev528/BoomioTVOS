@@ -36,6 +36,13 @@ struct NuvioTVApp: App {
         }
 
         #if canImport(AetherEngine)
+        // The engine owns the media fetches (demuxer AVIO, HLS ingest,
+        // prewarm), so the box's device certificate has to be presented from
+        // its sessions or not at all. The identity answers only for the
+        // enrolled host, once the edge has accepted the leaf.
+        EngineTLS.clientCertificateCredential = { space in
+            BoomioClientIdentity.shared.clientCredential(for: space)
+        }
         // Schedule AetherEngine prewarming on its required main actor before
         // player appearance.
         Task(priority: .utility) { @MainActor in
