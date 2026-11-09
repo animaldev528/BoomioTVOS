@@ -5005,12 +5005,16 @@ private struct TVMainTabView: View {
     /// after it ("extra argument in call" on the next `if`).
     @available(tvOS 18.0, *)
     private var hubTabs: some TabContent<TVTab> {
-        ForEach(TVHubKind.allCases) { kind in
-            Tab(value: TVTab.hub(kind)) {
-                hubTabContent(kind)
-            } label: {
-                Label(kind.title, systemImage: kind.symbol)
+        TabSection {
+            ForEach(TVHubKind.allCases) { kind in
+                Tab(value: TVTab.hub(kind)) {
+                    hubTabContent(kind)
+                } label: {
+                    Label(kind.title, systemImage: kind.symbol)
+                }
             }
+        } header: {
+            Text(L10n.string("nav_browse", fallback: "Browse"))
         }
     }
 
