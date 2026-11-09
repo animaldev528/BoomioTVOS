@@ -30,6 +30,10 @@ struct SearchView: View {
     var onOpenResult: ((NuvioMeta) -> Void)? = nil
     /// Opens a person from the People row.
     var onOpenPerson: ((TmdbPersonMetadata) -> Void)? = nil
+    /// Called when Menu/Back is pressed with the search field already
+    /// collapsed, so Search hands the viewer back to the tab view instead of
+    /// swallowing every Back press.
+    var onExitSearch: (() -> Void)? = nil
 
     @FocusState private var searchBarFocused: Bool
     @FocusState private var focusedResultID: String?
@@ -60,7 +64,8 @@ struct SearchView: View {
         onContentClick: @escaping (String, String) -> Void,
         onLongPress: ((NuvioMeta) -> Void)? = nil,
         onOpenResult: ((NuvioMeta) -> Void)? = nil,
-        onOpenPerson: ((TmdbPersonMetadata) -> Void)? = nil
+        onOpenPerson: ((TmdbPersonMetadata) -> Void)? = nil,
+        onExitSearch: (() -> Void)? = nil
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
         self.showDiscover = showDiscover
@@ -68,6 +73,7 @@ struct SearchView: View {
         self.onLongPress = onLongPress
         self.onOpenResult = onOpenResult
         self.onOpenPerson = onOpenPerson
+        self.onExitSearch = onExitSearch
     }
 
     var body: some View {
@@ -122,6 +128,7 @@ struct SearchView: View {
         .onAppear {
             viewModel.reloadRecent()
         }
+        .onExitCommand(perform: canHandleExitCommand ? handleExitCommand : nil)
         .onChange(of: focusedResultID) { _, newValue in
             if let newValue {
                 restoreArmTask?.cancel()
@@ -145,6 +152,19 @@ struct SearchView: View {
                 restoreOverlayFocus(to: target, generation: overlayRestoreGeneration)
             }
         }
+    }
+
+    private var canHandleExitCommand: Bool {
+        isEnabled && overlayRestoreResultID == nil
+    }
+
+    private func handleExitCommand() {
+        // Leave Search on the first Back that reaches us. With the keyboard up
+        // the text field eats that press to close itself, so this runs on the
+        // next one — never in a loop.
+        searchTextInputActive = false
+        searchBarFocused = false
+        onExitSearch?()
     }
 
     /// Arms the restore flag only after focus has stayed off the cards long

@@ -79,6 +79,11 @@ struct NetflixSearchView: View {
     var onOpenResult: ((NuvioMeta) -> Void)? = nil
     /// Opens a person from the People row.
     var onOpenPerson: ((TmdbPersonMetadata) -> Void)? = nil
+    /// Called when Menu/Back is pressed with the search field already
+    /// collapsed. The `.searchable` host swallows the press before the tab
+    /// view can open the sidebar, so Search has to hand the viewer out
+    /// itself — otherwise every Back press lands back on the text field.
+    var onExitSearch: (() -> Void)? = nil
 
     /// Separate list and poster focus IDs preserve overlay restoration in linear mode.
     @FocusState private var focusedItemID: String?
@@ -129,7 +134,8 @@ struct NetflixSearchView: View {
         onContentClick: @escaping (String, String) -> Void,
         onLongPress: ((NuvioMeta) -> Void)? = nil,
         onOpenResult: ((NuvioMeta) -> Void)? = nil,
-        onOpenPerson: ((TmdbPersonMetadata) -> Void)? = nil
+        onOpenPerson: ((TmdbPersonMetadata) -> Void)? = nil,
+        onExitSearch: (() -> Void)? = nil
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
         self.showDiscover = showDiscover
@@ -140,6 +146,7 @@ struct NetflixSearchView: View {
         self.onLongPress = onLongPress
         self.onOpenResult = onOpenResult
         self.onOpenPerson = onOpenPerson
+        self.onExitSearch = onExitSearch
     }
 
     var body: some View {
@@ -193,7 +200,8 @@ struct NetflixSearchView: View {
         }
         .onChange(of: focusedTypeFilterID) { _, newValue in
             if newValue != nil { clearOverlayRestoreLeftPressState() }
-            guard newValue != nil,
+            guard isActive,
+                  newValue != nil,
                   focusedItemID == nil,
                   isEnabled,
                   overlayRestoreItemID == nil,
@@ -209,7 +217,21 @@ struct NetflixSearchView: View {
             }
         }
         .onChange(of: isActive) { _, active in
-            if !active { clearOverlayRestoreLeftPressState() }
+            if !active {
+                clearOverlayRestoreLeftPressState()
+                // Leaving the tab must release the search field. Otherwise the
+                // next visit to Search (or the next Menu press that reaches the
+                // tab view) lands focus back on the text input.
+                if searchPresented {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        searchPresented = false
+                    }
+                }
+                focusedItemID = nil
+                focusedTypeFilterID = nil
+                focusedRecentSearchID = nil
+                clearRecentFocused = false
+            }
         }
         .onChange(of: focusedRecentSearchID) { _, newValue in
             if newValue != nil { clearOverlayRestoreLeftPressState() }
@@ -642,13 +664,13 @@ struct NetflixSearchView: View {
 
     private var canHandleExitCommand: Bool {
         guard isEnabled,
+              !isFullScreenOverlayPresented,
               overlayRestoreItemID == nil,
+              !overlayFocusRestorationActive,
               !discoverOverlayTransitionActive else { return false }
-        return focusedItemID != nil ||
-            focusedTypeFilterID != nil ||
-            focusedRecentSearchID != nil ||
-            clearRecentFocused ||
-            (viewModel.hasQuery && !searchPresented)
+        // Always claim Back while the tab is usable: the search host would
+        // otherwise eat the press and the viewer could never leave Search.
+        return true
     }
 
     private func handleExitCommand() {
@@ -656,11 +678,15 @@ struct NetflixSearchView: View {
             suppressOverlayDismissalExit = false
             return
         }
-        returnToResultsTop()
+        // Leave Search on the first Back that actually reaches us. When the
+        // tvOS keyboard is up, the search host eats that press to dismiss it,
+        // so this runs on the next one — never in a loop.
+        searchPresented = false
         focusedTypeFilterID = nil
         focusedRecentSearchID = nil
         clearRecentFocused = false
         shouldRestoreFocus = false
+        onExitSearch?()
     }
 
     /// Back on search behaves like Discover: leave the keyboard collapsed and
@@ -678,7 +704,8 @@ struct NetflixSearchView: View {
 
     /// Re-expands the shared Native search host after focus leaves results.
     private func showKeyboard() {
-        guard isEnabled,
+        guard isActive,
+              isEnabled,
               overlayRestoreItemID == nil,
               !overlayFocusRestorationActive else { return }
         withAnimation(.easeInOut(duration: 0.22)) {
