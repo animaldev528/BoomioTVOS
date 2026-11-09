@@ -34,6 +34,10 @@ struct NuvioTVApp: App {
             let enrolment = BoomioEnrolment()
             Task { @MainActor in enrolment.resumeRegistration(plane: plane) }
         }
+        // The companion hub socket follows the same saved server as the rest of
+        // the app. Starting before onboarding is harmless: the manager watches
+        // the stored configuration and connects once a box is saved.
+        Task { @MainActor in CompanionManager.shared.start() }
         TopShelfRatingsBridge.install()
         // Before launch finishes, as BGTaskScheduler requires.
         TopShelfBackgroundRefresh.register()

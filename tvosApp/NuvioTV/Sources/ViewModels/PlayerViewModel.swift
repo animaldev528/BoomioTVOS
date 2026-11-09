@@ -9163,3 +9163,77 @@ private enum PlayerTrackSelectionStore {
         ProfileSettings.current.set(json, forKey: SettingsKey.playbackTrackSelections)
     }
 }
+
+// MARK: - Companion remote (bsc /ws)
+
+/// The player-side surface of the companion hub: what `CompanionManager`
+/// reports once a second, and the controls a paired phone can drive.
+///
+/// This lives in the view model's own file because the snapshot needs
+/// `activeStreamURL`, `activeEpisodeNumbers` and `isTrailerPlaybackSession`,
+/// which are file-private implementation details rather than published state.
+extension PlayerViewModel: CompanionPlayerControlling {
+    var companionSnapshot: CompanionPlaybackSnapshot {
+        let meta = activeMeta
+        let artwork = resolveArtworkURL(
+            for: meta,
+            episode: currentEpisodeVideo,
+            isTrailer: isTrailerPlaybackSession
+        )
+        // Mirrors the id the progress/account paths use: prefer the explicit
+        // IMDb id, accept an id that already looks like one, then fall back.
+        let contentID = meta?.imdbId
+            ?? (meta?.id.hasPrefix("tt") == true ? meta?.id : nil)
+            ?? meta?.id
+
+        let kind: String?
+        if isLiveStream {
+            kind = "channel"
+        } else if let meta {
+            kind = meta.isSeries ? "series" : "movie"
+        } else {
+            kind = nil
+        }
+
+        return CompanionPlaybackSnapshot(
+            positionMs: Int64((time.current * 1000).rounded()),
+            durationMs: Int64((time.duration * 1000).rounded()),
+            isPlaying: status == .playing,
+            streamUrl: activeStreamURL,
+            imdbId: contentID,
+            title: title.isEmpty ? meta?.name : title,
+            season: activeEpisodeNumbers?.season,
+            episode: activeEpisodeNumbers?.episode,
+            posterUrl: artwork?.absoluteString,
+            contentType: kind
+        )
+    }
+
+    func companionTogglePlayPause() {
+        togglePlayPause()
+    }
+
+    func companionSetPlaying(_ playing: Bool) {
+        if playing {
+            guard status != .playing else { return }
+            play()
+        } else {
+            guard status == .playing else { return }
+            pause()
+        }
+    }
+
+    func companionSeek(toMilliseconds milliseconds: Int64) {
+        seek(to: Double(milliseconds) / 1000, exact: true)
+    }
+
+    /// The phone's stop button. There is no "release the stream" transport on
+    /// tvOS that leaves the player screen mounted, so this parks the playhead
+    /// at the start and pauses — the closest equivalent to the Android client's
+    /// `stopAndRelease()` without tearing the screen down from a socket
+    /// callback.
+    func companionStop() {
+        pause()
+        seek(to: 0, exact: true)
+    }
+}
