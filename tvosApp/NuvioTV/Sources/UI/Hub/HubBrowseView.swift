@@ -16,7 +16,7 @@ struct HubBrowseView: View {
     let onLongPressCard: (NuvioMeta) -> Void
 
     @StateObject private var model: HubBrowseViewModel
-    @State private var focusedCardID: String?
+    @FocusState private var focusedCardID: String?
 
     init(
         kind: TVHubKind,
