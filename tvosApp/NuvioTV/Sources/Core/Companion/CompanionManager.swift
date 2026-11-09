@@ -371,7 +371,7 @@ final class CompanionManager: NSObject {
 
         case "stealth_search":
             // The phone's magnifier: bring the TV's own search screen up. The
-            // query itself arrives as `keyboard_input` chunks below.
+            // query itself arrives as `keyboard_input` frames below.
             CompanionSearchChannel.shared.open()
 
         case "keyboard_input":
