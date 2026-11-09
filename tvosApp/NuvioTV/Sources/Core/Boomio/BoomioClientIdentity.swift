@@ -150,8 +150,12 @@ final class BoomioClientIdentity {
             kSecReturnRef as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ] as CFDictionary, &result)
-        guard status == errSecSuccess else { return nil }
-        return result as? SecIdentity
+        guard status == errSecSuccess, let result else { return nil }
+        // `as?` on a CoreFoundation type is refused by the compiler: the
+        // conditional cast is statically known to succeed. The item was
+        // matched as a kSecClassIdentity, so this is a checked coercion, not
+        // a guess.
+        return result as! SecIdentity
     }
 
     // MARK: - Keychain
@@ -188,8 +192,8 @@ final class BoomioClientIdentity {
             kSecReturnRef as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ] as CFDictionary, &result)
-        guard status == errSecSuccess else { return nil }
-        return result as? SecKey
+        guard status == errSecSuccess, let result else { return nil }
+        return result as! SecKey
     }
 
     private func loadCertificate() -> BoomioClientCertificate? {
@@ -200,7 +204,8 @@ final class BoomioClientIdentity {
             kSecReturnRef as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ] as CFDictionary, &result)
-        guard status == errSecSuccess, let certificate = result as? SecCertificate else { return nil }
+        guard status == errSecSuccess, let result else { return nil }
+        let certificate = result as! SecCertificate
         let der = SecCertificateCopyData(certificate) as Data
         guard let summary = SecCertificateCopySubjectSummary(certificate) else { return nil }
         return BoomioClientCertificate(commonName: summary as String, der: der, pem: X509.pem(der: der))
