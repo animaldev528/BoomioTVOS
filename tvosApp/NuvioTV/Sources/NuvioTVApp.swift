@@ -4977,24 +4977,30 @@ private struct TVMainTabView: View {
                 }
             }
             Tab(value: TVTab.settings) { settingsTabContent } label: { settingsTabLabel }
-            if !directCollectionDestinations.isEmpty {
-                TabSection {
-                    ForEach(directCollectionDestinations) { destination in
-                        Tab(value: TVTab.collection(destination.id)) {
-                            collectionTabContent(destination)
-                        } label: {
-                            collectionTabLabel(destination)
+            // `TabContentBuilder` builds at most ten statements: a statement
+            // past the tenth is reported as "extra argument in call" on an
+            // unrelated line. The two collection sections share one statement
+            // here so the three and Discover destinations above fit.
+            if !directCollectionDestinations.isEmpty || !genreCollectionDestinations.isEmpty {
+                if !directCollectionDestinations.isEmpty {
+                    TabSection {
+                        ForEach(directCollectionDestinations) { destination in
+                            Tab(value: TVTab.collection(destination.id)) {
+                                collectionTabContent(destination)
+                            } label: {
+                                collectionTabLabel(destination)
+                            }
                         }
+                    } header: {
+                        Text(L10n.string("tmdb_collections_title", fallback: "Collections"))
                     }
-                } header: {
-                    Text(L10n.string("tmdb_collections_title", fallback: "Collections"))
                 }
-            }
-            if !genreCollectionDestinations.isEmpty {
-                // Boomio: built against the tvOS 26 SDK, which has no
-                // TabContent.defaultSectionExpansion. The tvOS 27 branch is
-                // dropped; systems below 27 get the expanded native section.
-                genreTabSection
+                if !genreCollectionDestinations.isEmpty {
+                    // Boomio: built against the tvOS 26 SDK, which has no
+                    // TabContent.defaultSectionExpansion. The tvOS 27 branch is
+                    // dropped; systems below 27 get the expanded native section.
+                    genreTabSection
+                }
             }
         }
     }
