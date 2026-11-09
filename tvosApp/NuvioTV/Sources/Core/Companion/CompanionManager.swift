@@ -390,7 +390,21 @@ final class CompanionManager: NSObject {
         case "keyboard_submit":
             CompanionRemote.post(.companionSearchSubmitted)
 
-        case "play", "iptv_tune", "audio_fork_start", "audio_fork_stop", "music_identify":
+        case "audio_fork_start":
+            // Private listening. The phone binds a UDP socket and waits for
+            // this client's `started` ack; tvOS has no seam to tap the player's
+            // decoded audio into that format, so answer `error` — the phone maps
+            // an unknown reason to "unavailable" and leaves the toggle off,
+            // instead of hanging in "starting" until its timeout.
+            log.info("audio fork refused: tvOS cannot tap the decoded audio")
+            send(CompanionOutbound.AudioForkStatus(status: "error", reason: "unsupported_platform"))
+
+        case "audio_fork_stop":
+            // Nothing was ever armed; still answer so the phone's state machine
+            // settles instead of waiting on a stop ack.
+            send(CompanionOutbound.AudioForkStatus(status: "stopped", reason: nil))
+
+        case "play", "iptv_tune", "music_identify":
             log.info("\(frame.type, privacy: .public) is not implemented on tvOS yet")
 
         default:

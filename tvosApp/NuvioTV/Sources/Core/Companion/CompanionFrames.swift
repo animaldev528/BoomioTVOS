@@ -52,6 +52,18 @@ enum CompanionOutbound {
     struct PlaybackStopped: Encodable {
         let type = "playback_stopped"
     }
+
+    /// Answer to a phone's `audio_fork_start` / `audio_fork_stop`. The hub
+    /// forwards any `audio_fork`-typed frame from a TV to its paired phone,
+    /// and the phone's private-listening UI stays in "starting" until it hears
+    /// one. tvOS has no way to tap its decoded audio into the phone's UDP
+    /// format, so this client answers `error` instead of going silent — the
+    /// viewer gets "unavailable" rather than a toggle that hangs.
+    struct AudioForkStatus: Encodable {
+        let type = "audio_fork"
+        let status: String
+        let reason: String?
+    }
 }
 
 /// A frame from the hub (a paired phone, a watch party, or legacy bsm).
