@@ -4952,11 +4952,7 @@ private struct TVMainTabView: View {
             Tab(TVTab.home.title, systemImage: TVTab.home.symbol, value: TVTab.home) {
                 homeTabContent
             }
-            ForEach(TVHubKind.allCases) { kind in
-                Tab(kind.title, systemImage: kind.symbol, value: TVTab.hub(kind)) {
-                    hubTabContent(kind)
-                }
-            }
+            hubTabs
             if WatchPartyConfiguration.isEnabled && showWatchPartyTab {
                 Tab(TVTab.party.title, systemImage: TVTab.party.symbol, value: TVTab.party) {
                     partyTabContent
@@ -4966,8 +4962,10 @@ private struct TVMainTabView: View {
                 searchTab
             }
             if discoverLocation == "In Sidebar" {
-                Tab(TVTab.discover.title, systemImage: TVTab.discover.symbol, value: TVTab.discover) {
+                Tab(value: TVTab.discover) {
                     discoverTabContent
+                } label: {
+                    Label(TVTab.discover.title, systemImage: TVTab.discover.symbol)
                 }
             }
             Tab(TVTab.library.title, systemImage: TVTab.library.symbol, value: TVTab.library) {
@@ -4997,6 +4995,21 @@ private struct TVMainTabView: View {
                 // TabContent.defaultSectionExpansion. The tvOS 27 branch is
                 // dropped; systems below 27 get the expanded native section.
                 genreTabSection
+            }
+        }
+    }
+
+    /// The three browse destinations, kept out of the tab builder's long
+    /// expression: inlined, the generic `ForEach` pushes the whole sidebar
+    /// expression far enough that the type checker gives up on the statements
+    /// after it ("extra argument in call" on the next `if`).
+    @available(tvOS 18.0, *)
+    private var hubTabs: some TabContent<TVTab> {
+        ForEach(TVHubKind.allCases) { kind in
+            Tab(value: TVTab.hub(kind)) {
+                hubTabContent(kind)
+            } label: {
+                Label(kind.title, systemImage: kind.symbol)
             }
         }
     }
