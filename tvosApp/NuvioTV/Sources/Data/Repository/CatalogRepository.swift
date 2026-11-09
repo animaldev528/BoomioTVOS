@@ -3132,7 +3132,10 @@ final class CinemetaCatalogRepository: CatalogRepository {
         return response.metas.map { $0.toMeta(fallbackType: type) }
     }
 
-    private func fetch<T: Decodable>(_ url: URL) async throws -> T {
+    /// Not `private`: the taste add-on's more-like-this wall goes out through
+    /// this same session (client certificate, 403 re-presentation), from
+    /// `TasteMoreLikeThisService`.
+    func fetch<T: Decodable>(_ url: URL) async throws -> T {
         var request = URLRequest(url: url)
         request.timeoutInterval = 8
         request.setValue("Mozilla/5.0 (AppleTV; tvOS 18.0) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")

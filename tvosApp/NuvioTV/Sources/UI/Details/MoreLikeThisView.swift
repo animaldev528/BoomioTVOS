@@ -14,6 +14,9 @@ struct MoreLikeThisView: View {
     let onBack: () -> Void
 
     @State private var items: [NuvioMeta] = []
+    /// The thematic lists the title was matched on ("1930s · 2010s · lgbt") —
+    /// the taste add-on's own explanation of why these titles are related.
+    @State private var caption: String?
     @State private var isLoading = true
     @State private var attempted = false
     @FocusState private var focusedCardID: String?
@@ -38,6 +41,14 @@ struct MoreLikeThisView: View {
                         .padding(.leading, TVLayout.rowLeading)
                         .padding(.top, 24)
                 } else {
+                    if let caption {
+                        Text(caption)
+                            .font(.appFont(size: 20))
+                            .foregroundColor(.white.opacity(0.55))
+                            .lineLimit(2)
+                            .padding(.leading, TVLayout.rowLeading)
+                            .padding(.bottom, 6)
+                    }
                     TVCatalogRow(
                         id: rowID,
                         title: L10n.string("details_more_like_this", fallback: "More like this"),
@@ -104,12 +115,15 @@ struct MoreLikeThisView: View {
     }
 
     private var emptyMessage: String {
-        TmdbDetailsService.isConfigured
-            ? L10n.string("more_like_this_empty", fallback: "Nothing related found")
-            : L10n.string(
+        // The profile's own curated rows know best; TMDB only answers when the
+        // profile has no curated-row add-on. Say which one is missing.
+        if TasteMoreLikeThisService.rowAddonBaseURL == nil && !TmdbDetailsService.isConfigured {
+            return L10n.string(
                 "more_like_this_needs_tmdb",
                 fallback: "Enable TMDB in Settings to see related titles"
             )
+        }
+        return L10n.string("more_like_this_empty", fallback: "Nothing related found")
     }
 
     private var firstFocusID: String? {
@@ -121,10 +135,20 @@ struct MoreLikeThisView: View {
         guard !attempted else { return }
         attempted = true
         isLoading = true
-        let related = await TmdbDetailsService.fetchMoreLikeThis(for: meta, limit: 24)
+        // The taste add-on first: it answers from this profile's curated
+        // universe, which is what the Android wall shows. TMDB is only the
+        // fallback for a profile with no curated rows installed.
+        let curated = await TasteMoreLikeThisService().fetch(meta: meta)
         // Clear the spinner even when the fetch was cancelled: a view that
         // outlives its task must not sit on an empty screen spinning forever.
         isLoading = false
+        guard !Task.isCancelled else { return }
+        if let curated, !curated.items.isEmpty {
+            caption = curated.caption
+            items = TitleFeedbackStore.visible(curated.items)
+            return
+        }
+        let related = await TmdbDetailsService.fetchMoreLikeThis(for: meta, limit: 24)
         guard !Task.isCancelled else { return }
         items = TitleFeedbackStore.visible(related.map(\.asMeta))
     }

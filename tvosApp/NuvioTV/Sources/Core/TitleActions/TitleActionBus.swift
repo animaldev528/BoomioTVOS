@@ -11,11 +11,17 @@ final class TitleActionBus: ObservableObject {
 
     /// Set to a title to push the "More like this" screen for it.
     @Published var moreLikeThis: NuvioMeta?
+    /// Set to a title to push the "Public Lists" screen for it.
+    @Published var publicLists: NuvioMeta?
     /// True while the "Add a public list to Home" picker should be showing.
     @Published var isAddingPublicList = false
 
     func openMoreLikeThis(for meta: NuvioMeta) {
         moreLikeThis = meta
+    }
+
+    func openPublicLists(for meta: NuvioMeta) {
+        publicLists = meta
     }
 
     func openPublicListPicker() {

@@ -278,6 +278,8 @@ enum TVScreen: Equatable, CustomStringConvertible {
     case personBrowse(TmdbPersonMetadata)
     /// Related titles for one card, reached from the tile long-press menu.
     case moreLikeThis(id: String, type: String)
+    /// The public Trakt lists that contain one card, from the same menu.
+    case publicLists(id: String, type: String)
 
     var description: String {
         switch self {
@@ -291,6 +293,7 @@ enum TVScreen: Equatable, CustomStringConvertible {
         case let .productionBrowse(company): return "productionBrowse(\(company.name))"
         case let .personBrowse(person): return "personBrowse(\(person.name))"
         case let .moreLikeThis(id, type): return "moreLikeThis(\(id), \(type))"
+        case let .publicLists(id, type): return "publicLists(\(id), \(type))"
         }
     }
 
@@ -546,6 +549,10 @@ struct ContentView: View {
     /// Where "More like this" was opened from, so Back returns there instead of
     /// dropping the viewer on Home.
     @State private var moreLikeThisOrigin: TVScreen?
+    /// The card whose "Public Lists" screen is open, and where it was opened
+    /// from so Back returns there.
+    @State private var publicListsMeta: NuvioMeta?
+    @State private var publicListsOrigin: TVScreen?
     @State private var isAddingPublicListToHome = false
     @StateObject private var titleActionBus = TitleActionBus.shared
     /// Titles to walk back through when Details opened Details ("More like
@@ -658,7 +665,7 @@ struct ContentView: View {
                         }
                 }
 
-            case .main, .details, .player, .cloudLibrary, .collectionFolder, .productionBrowse, .personBrowse, .moreLikeThis:
+            case .main, .details, .player, .cloudLibrary, .collectionFolder, .productionBrowse, .personBrowse, .moreLikeThis, .publicLists:
                 // The tab view (Home included) stays mounted for the whole
                 // session; Details and Player are presented as overlays on TOP
                 // of it rather than replacing it. Returning therefore leaves
@@ -671,6 +678,11 @@ struct ContentView: View {
                         guard let meta else { return }
                         titleActionBus.moreLikeThis = nil
                         openMoreLikeThisScreen(for: meta)
+                    }
+                    .onReceive(titleActionBus.$publicLists) { meta in
+                        guard let meta else { return }
+                        titleActionBus.publicLists = nil
+                        openPublicListsScreen(for: meta)
                     }
                     .onReceive(titleActionBus.$isAddingPublicList) { showing in
                         guard showing else { return }
@@ -1107,7 +1119,7 @@ struct ContentView: View {
     private var fullScreenOverlayPresented: Bool {
         if isResolvingContinueWatchingStream { return true }
         switch activeScreen {
-        case .details, .player, .cloudLibrary, .collectionFolder, .productionBrowse, .personBrowse, .moreLikeThis: return true
+        case .details, .player, .cloudLibrary, .collectionFolder, .productionBrowse, .personBrowse, .moreLikeThis, .publicLists: return true
         default: return false
         }
     }
@@ -1197,6 +1209,12 @@ struct ContentView: View {
                 moreLikeThisOrigin = nil
                 moreLikeThisMeta = nil
             }
+        case .publicLists:
+            withAnimation(.easeInOut(duration: 0.24)) {
+                activeScreen = publicListsOrigin ?? .main
+                publicListsOrigin = nil
+                publicListsMeta = nil
+            }
         default:
             break
         }
@@ -1215,6 +1233,21 @@ struct ContentView: View {
         moreLikeThisMeta = meta
         withAnimation(.easeInOut(duration: 0.24)) {
             activeScreen = .moreLikeThis(id: meta.id, type: meta.type)
+        }
+    }
+
+    /// Opens the long-press menu's "Public Lists" screen for one card.
+    private func openPublicListsScreen(for meta: NuvioMeta) {
+        // Same rule as More like this: an overlay that replaced its own origin
+        // would make Back cyclic.
+        if case .publicLists = activeScreen {
+            // Keep the origin already recorded.
+        } else {
+            publicListsOrigin = activeScreen
+        }
+        publicListsMeta = meta
+        withAnimation(.easeInOut(duration: 0.24)) {
+            activeScreen = .publicLists(id: meta.id, type: meta.type)
         }
     }
 
@@ -2924,6 +2957,27 @@ struct ContentView: View {
                         }
                     },
                     onBack: { dismissOverlay() }
+                )
+                .transition(.opacity)
+                .onDisappear {
+                    detailsDidDisappearGeneration &+= 1
+                }
+                .zIndex(1)
+            }
+
+            if case .publicLists = activeScreen, let meta = publicListsMeta {
+                PublicListsView(
+                    meta: meta,
+                    onSelect: { id, type in
+                        withAnimation(.easeInOut(duration: 0.28)) {
+                            publicListsMeta = nil
+                            openDetailsRoot(id: id, type: type)
+                        }
+                    },
+                    onBack: { dismissOverlay() },
+                    onAddListToHome: {
+                        isAddingPublicListToHome = true
+                    }
                 )
                 .transition(.opacity)
                 .onDisappear {

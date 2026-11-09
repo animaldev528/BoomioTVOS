@@ -3603,13 +3603,17 @@ struct TitleActionsMenuContent: View {
                 )
             }
 
+            // Which public Trakt lists contain THIS title, drawn as rows of what
+            // they hold — the Android menu's "Public Lists". The URL picker is
+            // still reachable from that screen, for a list the lookup never
+            // names.
             Button {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) {
-                    TitleActionBus.shared.openPublicListPicker()
+                    TitleActionBus.shared.openPublicLists(for: meta)
                 }
             } label: {
                 Label(
-                    L10n.string("action_add_public_list_to_home", fallback: "Add a public list to Home"),
+                    L10n.string("action_public_lists", fallback: "Public Lists"),
                     systemImage: "list.bullet.rectangle"
                 )
             }
