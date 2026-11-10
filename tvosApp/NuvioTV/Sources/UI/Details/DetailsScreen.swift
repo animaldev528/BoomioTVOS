@@ -915,9 +915,7 @@ struct DetailsScreen: View {
                 // take first for a long-running show.
                 pool = SmartPlaybackSelector.preferringEpisode(
                     available,
-                    target: viewModel.prefetchedEpisode.map {
-                        SmartPlaybackSelector.EpisodeTarget(season: $0.season, episode: $0.episode)
-                    }
+                    target: SmartPlaybackSelector.episodeTarget(for: viewModel.prefetchedEpisode)
                 )
             } else {
                 // Filter out 0-res / ticket streams if valid streams exist
@@ -954,9 +952,7 @@ struct DetailsScreen: View {
                 includeDebrid: debrid.isEnabled || TorrentSettings.isEnabled(),
                 preferredTags: preferredTags,
                 cachedOnly: cachedOnly,
-                episode: viewModel.prefetchedEpisode.map {
-                    SmartPlaybackSelector.EpisodeTarget(season: $0.season, episode: $0.episode)
-                }
+                episode: SmartPlaybackSelector.episodeTarget(for: viewModel.prefetchedEpisode)
             )
         }
 
@@ -1166,9 +1162,7 @@ struct DetailsScreen: View {
                     if preserveAddonOrder {
                         pool = SmartPlaybackSelector.preferringEpisode(
                             available,
-                            target: viewModel.prefetchedEpisode.map {
-                                SmartPlaybackSelector.EpisodeTarget(season: $0.season, episode: $0.episode)
-                            }
+                            target: SmartPlaybackSelector.episodeTarget(for: viewModel.prefetchedEpisode)
                         )
                     } else {
                         let valid = available.filter {
@@ -1202,9 +1196,7 @@ struct DetailsScreen: View {
                         includeDebrid: debridIsEnabled || torrentIsEnabled,
                         preferredTags: preferredTags,
                         cachedOnly: cachedOnly,
-                        episode: viewModel.prefetchedEpisode.map {
-                            SmartPlaybackSelector.EpisodeTarget(season: $0.season, episode: $0.episode)
-                        }
+                        episode: SmartPlaybackSelector.episodeTarget(for: viewModel.prefetchedEpisode)
                     )
                 }
 
@@ -3451,6 +3443,14 @@ enum SmartPlaybackSelector {
     struct EpisodeTarget: Equatable {
         let season: Int
         let episode: Int
+    }
+
+    /// Read through a helper rather than `viewModel.prefetchedEpisode.map {}`:
+    /// the map closure is non-isolated, so touching the view model's
+    /// main-actor state inside it is a concurrency error.
+    static func episodeTarget(for video: NuvioVideo?) -> EpisodeTarget? {
+        guard let video, video.episode > 0 else { return nil }
+        return EpisodeTarget(season: video.season, episode: video.episode)
     }
 
     /// Positive when the stream names THIS episode, negative when it names a
