@@ -1162,7 +1162,7 @@ struct DetailsScreen: View {
                     if preserveAddonOrder {
                         pool = SmartPlaybackSelector.preferringEpisode(
                             available,
-                            target: SmartPlaybackSelector.episodeTarget(for: viewModel.prefetchedEpisode)
+                            target: SmartPlaybackSelector.episodeTarget(for: await viewModel.prefetchedEpisode)
                         )
                     } else {
                         let valid = available.filter {
@@ -1196,7 +1196,7 @@ struct DetailsScreen: View {
                         includeDebrid: debridIsEnabled || torrentIsEnabled,
                         preferredTags: preferredTags,
                         cachedOnly: cachedOnly,
-                        episode: SmartPlaybackSelector.episodeTarget(for: viewModel.prefetchedEpisode)
+                        episode: SmartPlaybackSelector.episodeTarget(for: await viewModel.prefetchedEpisode)
                     )
                 }
 

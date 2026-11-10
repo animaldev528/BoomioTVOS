@@ -110,7 +110,7 @@ struct PublicListsView: View {
                 case let .row(row, list):
                     listByRowID[row.id] = list
                     rows.append(row)
-                case let .finished:
+                case .finished:
                     isLoading = false
                 case let .failed(message):
                     errorMessage = message
