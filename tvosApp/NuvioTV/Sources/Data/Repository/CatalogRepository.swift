@@ -4753,7 +4753,8 @@ extension CinemetaCatalogRepository {
     }
 
     /// Mirrors Android's `isSearchOnlyCatalog()`: only the object form with
-    /// `name: "search", isRequired: true` is a search-only catalog.    private static func isSearchOnlyCatalog(_ catalog: AddonManifestCatalog) -> Bool {
+    /// `name: "search", isRequired: true` is a search-only catalog.
+    private static func isSearchOnlyCatalog(_ catalog: AddonManifestCatalog) -> Bool {
         (catalog.extra ?? []).contains {
             $0.name.caseInsensitiveCompare("search") == .orderedSame && $0.isRequired == true
         }
