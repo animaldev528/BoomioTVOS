@@ -80,6 +80,14 @@ struct CatalogSearchSection: Identifiable {
     let catalogId: String
     let type: String
     let results: [NuvioMeta]
+    /// The add-on that answered, so the row can be pinned to Home as a source.
+    /// Nil for the built-in Cinemeta and for the flat compatibility paths.
+    var addonId: String? = nil
+    /// The query this row answered. A pinned row keeps it and re-asks the same
+    /// catalog on every Home load, which is what makes an "episode results"
+    /// row possible at all: the add-on's episode search is a query, not a
+    /// catalog with a fixed list.
+    var searchTerm: String? = nil
 }
 
 struct CatalogSearchOutcome {
@@ -224,6 +232,19 @@ protocol CatalogRepository {
         genre: String?
     ) async throws -> CatalogPage
 
+    /// The same browse with the catalog's `search` extra supplied. A pinned
+    /// "episode results" row is a saved query, not a fixed list: Home re-asks
+    /// the add-on's search catalog with this term on every load. Repositories
+    /// whose catalogs take no search extra ignore it.
+    func browseCatalog(
+        addonId: String?,
+        contentType: String,
+        catalogId: String,
+        skip: Int,
+        genre: String?,
+        search: String?
+    ) async throws -> CatalogPage
+
     /// Get available genres for content type
     func getGenres(contentType: String) async throws -> [String]
 
@@ -310,6 +331,23 @@ extension CatalogRepository {
         genre: String?
     ) async throws -> CatalogPage {
         try await browseCatalog(
+            contentType: contentType,
+            catalogId: catalogId,
+            skip: skip,
+            genre: genre
+        )
+    }
+
+    func browseCatalog(
+        addonId: String?,
+        contentType: String,
+        catalogId: String,
+        skip: Int,
+        genre: String?,
+        search: String?
+    ) async throws -> CatalogPage {
+        try await browseCatalog(
+            addonId: addonId,
             contentType: contentType,
             catalogId: catalogId,
             skip: skip,
@@ -2182,6 +2220,9 @@ final class CinemetaCatalogRepository: CatalogRepository {
             /// Row label for this source ("AI Episodes"), falling back to the
             /// add-on name when the catalog declares none.
             let displayName: String
+            /// The manifest id of the add-on serving the catalog, so the row can
+            /// later be pinned to Home as an add-on source. Nil for Cinemeta.
+            var addonId: String? = nil
         }
 
         var targets: [SearchTarget] = []
@@ -2245,7 +2286,8 @@ final class CinemetaCatalogRepository: CatalogRepository {
                         catalogId: catalog.id,
                         isAddon: true,
                         displayName: catalog.name?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-                            ?? addonName
+                            ?? addonName,
+                        addonId: manifest.id
                     )
                     if Self.isSlowSearchCatalog(id: catalog.id) {
                         slowTargets.append(target)
@@ -2380,7 +2422,9 @@ final class CinemetaCatalogRepository: CatalogRepository {
                 addonName: target.addonName,
                 catalogId: target.catalogId,
                 type: target.type,
-                results: sourceResults
+                results: sourceResults,
+                addonId: target.addonId,
+                searchTerm: trimmed
             ))
         }
 
@@ -2419,7 +2463,7 @@ final class CinemetaCatalogRepository: CatalogRepository {
         let manifests = await loadManifestsConcurrently(urls: manifestURLs)
         let metadataContext = Self.metadataCacheContext
 
-        var targets: [(addonName: String, baseURL: URL, type: String, catalogId: String, displayName: String)] = []
+        var targets: [(addonName: String, baseURL: URL, type: String, catalogId: String, displayName: String, addonId: String)] = []
         for manifestURL in manifestURLs {
             guard let manifest = manifests[manifestURL], manifest.id != Self.cinemetaAddonId else { continue }
             let base = manifestURL.lastPathComponent.lowercased() == "manifest.json"
@@ -2434,7 +2478,8 @@ final class CinemetaCatalogRepository: CatalogRepository {
                     type: catalog.type,
                     catalogId: catalog.id,
                     displayName: catalog.name?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-                        ?? addonName
+                        ?? addonName,
+                    addonId: manifest.id
                 ))
             }
         }
@@ -2493,7 +2538,9 @@ final class CinemetaCatalogRepository: CatalogRepository {
                 addonName: target.addonName,
                 catalogId: target.catalogId,
                 type: target.type,
-                results: deduplicated
+                results: deduplicated,
+                addonId: target.addonId,
+                searchTerm: trimmed
             ))
         }
         cacheMetadata(flat, context: metadataContext)
@@ -2806,6 +2853,24 @@ final class CinemetaCatalogRepository: CatalogRepository {
         skip: Int,
         genre: String?
     ) async throws -> CatalogPage {
+        try await browseCatalog(
+            addonId: addonId,
+            contentType: contentType,
+            catalogId: catalogId,
+            skip: skip,
+            genre: genre,
+            search: nil
+        )
+    }
+
+    func browseCatalog(
+        addonId: String?,
+        contentType: String,
+        catalogId: String,
+        skip: Int,
+        genre: String?,
+        search: String?
+    ) async throws -> CatalogPage {
         let metadataContext = Self.metadataCacheContext
         if addonId == "simkl" || (addonId == nil && catalogId == "plantowatch") {
             let allItems = await SimklLibraryService.fetchPlanToWatchItems(
@@ -2849,7 +2914,7 @@ final class CinemetaCatalogRepository: CatalogRepository {
             type: contentType,
             catalogId: catalogId,
             skip: skip == 0 ? nil : skip,
-            search: nil,
+            search: search?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
             genre: genre
         )
         let items: [NuvioMeta]

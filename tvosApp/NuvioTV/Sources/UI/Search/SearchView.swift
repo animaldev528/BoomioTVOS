@@ -286,7 +286,9 @@ struct SearchView: View {
                 addonName: section.addonName,
                 catalogId: section.catalogId,
                 type: section.type,
-                results: items
+                results: items,
+                addonId: section.addonId,
+                searchTerm: section.searchTerm
             )
         }
     }
@@ -295,6 +297,28 @@ struct SearchView: View {
     /// needs the rails even when no catalog returned a single title.
     private var usesSourceRails: Bool {
         visibleSections.count > 1 || !viewModel.people.isEmpty
+    }
+
+    /// Pins one source row to Home as a saved query. The collection keeps the
+    /// add-on, its catalog and the term, so Home re-asks that catalog on every
+    /// load — the only shape that works for an episode search, whose answer is
+    /// a query rather than a fixed list.
+    private func addRowToHome(_ section: CatalogSearchSection) {
+        guard let addonId = section.addonId,
+              let term = section.searchTerm?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !term.isEmpty else { return }
+        let title = "\(section.title) · \(term)"
+        let source: [String: Any] = [
+            "provider": "addon",
+            "addonId": addonId,
+            "addon_id": addonId,
+            "type": section.type,
+            "catalogId": section.catalogId,
+            "catalog_id": section.catalogId,
+            "search": term,
+            "title": title
+        ]
+        CollectionQuickAdd.addList(source: source, fallbackTitle: title)
     }
 
     @ViewBuilder
@@ -340,7 +364,8 @@ struct SearchView: View {
                 },
                 onFocusItem: { item in lastFocusedResultID = item.id },
                 onLongPressItem: onLongPress,
-                onSelectPerson: onOpenPerson
+                onSelectPerson: onOpenPerson,
+                onAddSectionToHome: { section in addRowToHome(section) }
             )
         } else {
             resultsGrid

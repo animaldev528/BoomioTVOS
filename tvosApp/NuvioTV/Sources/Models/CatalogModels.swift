@@ -4930,7 +4930,8 @@ struct NuvioCollectionFolder: Decodable, Identifiable, Equatable {
                 addonId: $0.addonId,
                 type: $0.type,
                 catalogId: $0.catalogId,
-                genre: $0.genre
+                genre: $0.genre,
+                search: $0.search
             )
         }
     }
@@ -4944,14 +4945,15 @@ struct NuvioCollectionFolder: Decodable, Identifiable, Equatable {
                   let addonId = source.addonId, !addonId.isEmpty,
                   let type = source.type, !type.isEmpty,
                   let catalogId = source.catalogId, !catalogId.isEmpty else { continue }
-            let key = "\(addonId)_\(type)_\(catalogId)_\(source.genre ?? "")"
+            let key = "\(addonId)_\(type)_\(catalogId)_\(source.genre ?? "")_\(source.search ?? "")"
             guard seen.insert(key).inserted else { continue }
             merged.append(
                 NuvioCollectionCatalogSource(
                     addonId: addonId,
                     type: type,
                     catalogId: catalogId,
-                    genre: source.genre
+                    genre: source.genre,
+                    search: source.search
                 )
             )
         }
@@ -4976,11 +4978,15 @@ struct NuvioCollectionSource: Decodable, Hashable {
     var sortBy: String?
     var sortHow: String?
     var filters: NuvioTmdbCollectionFilters?
+    /// The catalog's `search` extra. A pinned search row ("The Simpsons
+    /// episodes") is a saved query: the add-on is asked again on every load
+    /// instead of replaying one stale answer.
+    var search: String?
 
     enum CodingKeys: String, CodingKey {
         case provider, addonId, type, catalogId, genre, tmdbSourceType, title
         case tmdbId, traktListId, mdblistId, mdblistSlug, mdblistUrl
-        case mediaType, sortBy, sortHow, filters
+        case mediaType, sortBy, sortHow, filters, search, query
         case addon_id, catalog_id, tmdb_source_type, tmdb_id, trakt_list_id
         case mdblist_id, mdblist_slug, mdblist_url
         case media_type, sort_by, sort_how
@@ -5002,7 +5008,8 @@ struct NuvioCollectionSource: Decodable, Hashable {
         mediaType: String? = nil,
         sortBy: String? = nil,
         sortHow: String? = nil,
-        filters: NuvioTmdbCollectionFilters? = nil
+        filters: NuvioTmdbCollectionFilters? = nil,
+        search: String? = nil
     ) {
         self.provider = provider
         self.addonId = addonId
@@ -5020,6 +5027,7 @@ struct NuvioCollectionSource: Decodable, Hashable {
         self.sortBy = sortBy
         self.sortHow = sortHow
         self.filters = filters
+        self.search = search
     }
 
     init(from decoder: Decoder) throws {
@@ -5051,6 +5059,8 @@ struct NuvioCollectionSource: Decodable, Hashable {
         sortHow = try c.decodeIfPresent(String.self, forKey: .sortHow)
             ?? c.decodeIfPresent(String.self, forKey: .sort_how)
         filters = try c.decodeIfPresent(NuvioTmdbCollectionFilters.self, forKey: .filters)
+        search = try c.decodeIfPresent(String.self, forKey: .search)
+            ?? c.decodeIfPresent(String.self, forKey: .query)
     }
 
     var normalizedProvider: String {
@@ -5068,7 +5078,7 @@ struct NuvioCollectionSource: Decodable, Hashable {
             let listIdentifier = mdblistId.map(String.init) ?? mdblistSlug ?? mdblistUrl ?? catalogId ?? ""
             return "mdblist_\(listIdentifier)_\(mediaType ?? "")_\(sortBy ?? "")_\(sortHow ?? "")"
         default:
-            return "addon_\(addonId ?? "")_\(type ?? "")_\(catalogId ?? "")_\(genre ?? "")"
+            return "addon_\(addonId ?? "")_\(type ?? "")_\(catalogId ?? "")_\(genre ?? "")_\(search ?? "")"
         }
     }
 }
@@ -5425,12 +5435,21 @@ struct NuvioCollectionCatalogSource: Codable, Equatable {
     let type: String
     let catalogId: String
     var genre: String?
+    /// The catalog's `search` extra, for a row pinned from a search result.
+    var search: String?
 
-    init(addonId: String, type: String, catalogId: String, genre: String? = nil) {
+    init(
+        addonId: String,
+        type: String,
+        catalogId: String,
+        genre: String? = nil,
+        search: String? = nil
+    ) {
         self.addonId = addonId
         self.type = type
         self.catalogId = catalogId
         self.genre = genre
+        self.search = search
     }
 }
 

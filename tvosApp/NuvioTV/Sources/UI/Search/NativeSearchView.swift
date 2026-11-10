@@ -919,7 +919,9 @@ struct NativeSearchView: View {
                 addonName: section.addonName,
                 catalogId: section.catalogId,
                 type: section.type,
-                results: items
+                results: items,
+                addonId: section.addonId,
+                searchTerm: section.searchTerm
             )
         }
     }
