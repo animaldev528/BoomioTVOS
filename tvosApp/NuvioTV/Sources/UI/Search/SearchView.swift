@@ -296,7 +296,10 @@ struct SearchView: View {
     /// People are their own rail, so a query that matches only an actor still
     /// needs the rails even when no catalog returned a single title.
     private var usesSourceRails: Bool {
-        visibleSections.count > 1 || !viewModel.people.isEmpty
+        if visibleSections.count > 1 || !viewModel.people.isEmpty { return true }
+        // One add-on row still needs the rails: that row is where "Add row to
+        // Home" lives, and an episode search answers with exactly one row.
+        return visibleSections.contains { $0.addonId != nil && $0.searchTerm != nil }
     }
 
     /// Pins one source row to Home as a saved query. The collection keeps the

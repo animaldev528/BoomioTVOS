@@ -32,6 +32,9 @@ struct PublicListsView: View {
     /// focusable panel instead of a gesture that would never reach it.
     @State private var showAddPicker = false
     @FocusState private var pickerFocusID: String?
+    /// Lists already pinned from this screen, so a row's chip can confirm it
+    /// rather than appearing to do nothing on a second press.
+    @State private var addedRowIDs: Set<String> = []
 
     init(
         meta: NuvioMeta,
@@ -72,27 +75,66 @@ struct PublicListsView: View {
                     .padding(.leading, TVLayout.rowLeading)
                 } else {
                     ForEach(rows) { row in
-                        TVCatalogRow(
-                            id: row.id,
-                            title: row.title,
-                            addonName: row.addonName,
-                            showsSectionTitle: true,
-                            horizontalEdgeInset: 0,
-                            items: row.items,
-                            initialFocusCardKey: nil,
-                            landscapeFocusedId: nil,
-                            externalFocus: $focusedCardID,
-                            onInitialFocusRequested: {},
-                            onFocus: { item in
-                                focusedCardID = TVHomeCardIdentity.key(rowID: row.id, item: item)
-                            },
-                            onBlur: { _ in },
-                            onApproachEnd: { _ in },
-                            onSelect: { item in
-                                onSelect(item.id, item.type)
-                            },
-                            onLongPress: nil
-                        )
+                        // The row's own title line carries the pin action, so
+                        // "add this list to Home" sits on the list itself —
+                        // not only in the page header — and pressing any title
+                        // in the list still opens that title.
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 18) {
+                                Text(row.title)
+                                    .font(.appFont(size: 30, weight: .bold))
+                                    .foregroundColor(.white)
+
+                                if let list = listByRowID[row.id] {
+                                    let added = addedRowIDs.contains(row.id)
+                                    Button {
+                                        addToHome(list)
+                                        addedRowIDs.insert(row.id)
+                                    } label: {
+                                        HStack(spacing: 8) {
+                                            Image(systemName: added
+                                                  ? "checkmark"
+                                                  : "plus.rectangle.on.rectangle")
+                                            Text(added
+                                                 ? L10n.string("public_lists_added", fallback: "Added to Home")
+                                                 : L10n.string("public_lists_add_one", fallback: "Add this list to Home"))
+                                        }
+                                        .font(.appFont(size: 17, weight: .semibold))
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 8)
+                                        .background(Color.white.opacity(added ? 0.06 : 0.14), in: Capsule())
+                                        .foregroundColor(.white.opacity(added ? 0.7 : 1))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.leading, TVLayout.rowLeading)
+                            .offset(y: 8)
+
+                            TVCatalogRow(
+                                id: row.id,
+                                title: row.title,
+                                addonName: row.addonName,
+                                showsSectionTitle: false,
+                                horizontalEdgeInset: 0,
+                                items: row.items,
+                                initialFocusCardKey: nil,
+                                landscapeFocusedId: nil,
+                                externalFocus: $focusedCardID,
+                                onInitialFocusRequested: {},
+                                onFocus: { item in
+                                    focusedCardID = TVHomeCardIdentity.key(rowID: row.id, item: item)
+                                },
+                                onBlur: { _ in },
+                                onApproachEnd: { _ in },
+                                onSelect: { item in
+                                    onSelect(item.id, item.type)
+                                },
+                                onLongPress: nil
+                            )
+                        }
                         .id(row.id)
                     }
                 }

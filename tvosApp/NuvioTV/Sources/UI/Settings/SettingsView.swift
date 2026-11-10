@@ -12232,6 +12232,12 @@ private struct AboutSettingsView: View {
         VStack(alignment: .leading, spacing: 22) {
             SettingsGroup(title: L10n.string("tvos_settings_nuviotv", fallback: "NuvioTV"), subtitle: L10n.string("tvos_settings_build_and_runtime_information", fallback: "Build and runtime information")) {
                 SettingsInfoRow(title: L10n.string("tvos_settings_app_version", fallback: "App Version"), value: appVersion)
+                if let buildStamp {
+                    SettingsInfoRow(
+                        title: L10n.string("tvos_settings_build_stamp", fallback: "Build"),
+                        value: buildStamp
+                    )
+                }
                 SettingsInfoRow(
                     title: L10n.string("release_update_latest_version", fallback: "Latest Version"),
                     value: releaseUpdateService.latestStatus
@@ -12384,6 +12390,17 @@ private struct AboutSettingsView: View {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
         return "\(version) (\(build))"
+    }
+
+    /// The CI run that produced this IPA, injected by `scripts/build-ipa.sh`.
+    /// Shown short — tag plus the first seven commit characters — because the
+    /// sideloaded bundle id and version are identical from build to build.
+    private var buildStamp: String? {
+        guard let raw = Bundle.main.object(forInfoDictionaryKey: "BoomioBuildStamp") as? String,
+              !raw.isEmpty else { return nil }
+        guard let dash = raw.lastIndex(of: "-") else { return raw }
+        let sha = raw[raw.index(after: dash)...]
+        return "\(raw[..<dash])-\(sha.prefix(7))"
     }
 }
 

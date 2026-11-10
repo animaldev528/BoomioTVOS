@@ -45,6 +45,9 @@ jobs:
 
       - name: Build unsigned IPA
         env:
+          # Shown in Settings → About as "<tag>-<commit>", so the device can
+          # name the exact build it is running after a sideload.
+          BOOMIO_BUILD_STAMP: ${{ inputs.tag || github.ref_name }}-${{ github.sha }}
           # Bundled Trakt app: a public client id, the same kind that already
           # ships inside the Android client. NuvioTV/Info.plist expands it into
           # TraktClientID, which is what makes on-device sign-in a six-character

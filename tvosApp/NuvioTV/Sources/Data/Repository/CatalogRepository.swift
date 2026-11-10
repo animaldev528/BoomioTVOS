@@ -4454,7 +4454,40 @@ extension CinemetaCatalogRepository {
                 return l != r ? l < r : lhs.offset < rhs.offset
             }
             .map(\.element)
-        return (hubs + plainSources, spotlightGroups)
+        // One band per provider. A service that ships a genre-bearing catalog
+        // is drawn as its slate — its own list plus a row per genre — while the
+        // same service's `hub-*` ribbon from another add-on drills to a single
+        // row. The single row is the band the hub was criticised for, so the
+        // rich section wins and its one-row twin is dropped. Providers with no
+        // genre-bearing catalog keep their band, but only one copy of it: the
+        // same row is commonly installed twice (the board's hub and the
+        // per-row add-on that names it).
+        let richProviders = Set((hubs + plainSources).compactMap { source -> String? in
+            guard Self.providerName(inCatalogName: source.name) != nil,
+                  source.genreOptions.count >= 4 else { return nil }
+            return Self.providerKey(for: source)
+        })
+        var keptRich = Set<String>()
+        var keptBands = Set<String>()
+        func keep(_ source: TVHubCatalogSource) -> Bool {
+            guard Self.providerName(inCatalogName: source.name) != nil else { return true }
+            let key = Self.providerKey(for: source)
+            if richProviders.contains(key) {
+                // A rich source replaces every ribbon for the same service.
+                if source.isHub || source.catalogId.lowercased().hasPrefix("rec-") { return false }
+                guard source.genreOptions.count >= 4 else { return true }
+                return keptRich.insert(key).inserted
+            }
+            return keptBands.insert(key).inserted
+        }
+        let filtered = (hubs + plainSources).filter(keep)
+        return (filtered, spotlightGroups)
+    }
+
+    /// "<provider>|<type>" — the identity of one service's band within a hub.
+    private static func providerKey(for source: TVHubCatalogSource) -> String {
+        let provider = providerName(inCatalogName: source.name)?.lowercased() ?? source.name.lowercased()
+        return "\(provider)|\(source.type.lowercased())"
     }
 
     /// Loads one hub section. A `hub-*` catalog is reached through its
@@ -4701,8 +4734,10 @@ extension CinemetaCatalogRepository {
         "Mystery", "Crime", "Thriller", "Documentary",
     ]
     /// A provider section is the service's slate, not a genre browser: this
-    /// many genre rows (plus the service's own list) and no more.
-    private static let providerGenreRowLimit = 6
+    /// many genre rows (plus the service's own list) and no more. Eight is
+    /// enough to cover family, kids, comedy and the action/adventure pair
+    /// that makes a service feel populated rather than a single row.
+    private static let providerGenreRowLimit = 8
 
     /// One catalog's titles. The trailing `rec-drill:<rowId>` tile is a link to
     /// the drilldown, not a title, so it never reaches a row.

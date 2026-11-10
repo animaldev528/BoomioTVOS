@@ -68,6 +68,17 @@ if [[ -n "${TMDB_API_KEY:-}" ]]; then
   echo "==> Bundled TMDB key"
 fi
 
+# Build stamp. Sideloading keeps the bundle id and version identical between
+# runs, so the device cannot otherwise tell a new IPA from an old one. The CI
+# passes the tag and commit; Settings → About shows it, which makes "am I
+# running the new build?" a question the screen answers.
+if [[ -n "${BOOMIO_BUILD_STAMP:-}" ]]; then
+  if ! /usr/libexec/PlistBuddy -c "Set :BoomioBuildStamp ${BOOMIO_BUILD_STAMP}" "$APP_PATH/Info.plist" 2>/dev/null; then
+    /usr/libexec/PlistBuddy -c "Add :BoomioBuildStamp string ${BOOMIO_BUILD_STAMP}" "$APP_PATH/Info.plist"
+  fi
+  echo "==> Build stamp ${BOOMIO_BUILD_STAMP}"
+fi
+
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PATH/Info.plist" 2>/dev/null || echo "latest")
 
 echo "==> Packaging unsigned IPA for version ${VERSION}..."
