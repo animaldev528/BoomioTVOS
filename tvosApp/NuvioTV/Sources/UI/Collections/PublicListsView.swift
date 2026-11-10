@@ -27,7 +27,6 @@ struct PublicListsView: View {
     /// The list behind each row, so holding a card can offer to pin that very
     /// list instead of making the viewer find it again in the picker.
     @State private var listByRowID: [String: TraktPublicListSummary] = [:]
-    @State private var pendingAdd: TraktPublicListSummary?
     /// The add-to-Home panel. The card's hold-menu is built inside
     /// `PosterCard` and cannot take an extra item, so the action gets its own
     /// focusable panel instead of a gesture that would never reach it.
@@ -125,27 +124,6 @@ struct PublicListsView: View {
             if !loading && rows.isEmpty { backFocused = true }
         }
         .onExitCommand(perform: onBack)
-        // Holding any card in a list row offers that list itself, which is the
-        // list the viewer is actually looking at — the header's picker makes
-        // them find it again from scratch.
-        .alert(
-            L10n.string("public_lists_add_confirm_title", fallback: "Add this list to Home"),
-            isPresented: Binding(
-                get: { pendingAdd != nil },
-                set: { if !$0 { pendingAdd = nil } }
-            ),
-            presenting: pendingAdd
-        ) { list in
-            Button(L10n.string("tvos_settings_add", fallback: "Add")) {
-                addToHome(list)
-                pendingAdd = nil
-            }
-            Button(L10n.string("action_cancel", fallback: "Cancel"), role: .cancel) {
-                pendingAdd = nil
-            }
-        } message: { list in
-            Text(list.displayTitle)
-        }
         .overlay { if showAddPicker { addPicker } }
     }
 
