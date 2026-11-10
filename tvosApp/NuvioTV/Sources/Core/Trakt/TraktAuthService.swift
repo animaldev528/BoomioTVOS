@@ -76,8 +76,10 @@ enum TraktConfig {
     static var hasBundledApp: Bool { !bundledClientID.isEmpty }
 
     private static func bundledValue(_ key: String) -> String {
-        ((Bundle.main.object(forInfoDictionaryKey: key) as? String) ?? "")
+        let raw = ((Bundle.main.object(forInfoDictionaryKey: key) as? String) ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        // A build setting that never got substituted must not pass for an id.
+        return raw.hasPrefix("$(") ? "" : raw
     }
 
     /// A value the user typed always wins; the bundled app is the fallback.
