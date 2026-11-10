@@ -4206,7 +4206,15 @@ extension CinemetaCatalogRepository {
     /// produced no row is dropped, never shipped blank.
     func hubSection(for source: TVHubCatalogSource) async -> TVHubSection? {
         let rows: [TVHubSectionRow]
-        if source.isHub {
+        // A `hub-*` catalog is the server's merged provider row; a `rec-*`
+        // catalog is the same thing under this board's own naming. Both carry
+        // `sub_rows`, and the server exposes those as `rec-<rowId>-drilldown`.
+        // Android asks every section for its drilldown
+        // (`HubBrowseViewModel.loadHubSectionRows`) and so draws a dozen rows
+        // per tab; asking only for `hub-*` is why the provider tabs here drew
+        // one row each. A catalog the server has no drilldown for still falls
+        // back to its own grid as a single row (see `hubDrillRows`).
+        if source.isHub || source.catalogId.lowercased().hasPrefix("rec-") {
             rows = await hubDrillRows(for: source)
         } else if let items = await hubItems(
             source, catalogId: source.catalogId, type: source.type, genre: source.genre
@@ -4271,7 +4279,11 @@ extension CinemetaCatalogRepository {
     }
 
     private func hubDrillRows(for source: TVHubCatalogSource) async -> [TVHubSectionRow] {
-        let rowId = source.catalogId.lowercased().hasPrefix("hub-")
+        // Both prefixes name the same row: `hub-<id>` on the older catalogs,
+        // `rec-<id>` on the board's own. Leaving `rec-` in place built
+        // `rec-rec-<id>-drilldown`, a catalog that never exists.
+        let lowered = source.catalogId.lowercased()
+        let rowId = (lowered.hasPrefix("hub-") || lowered.hasPrefix("rec-"))
             ? String(source.catalogId.dropFirst(4))
             : source.catalogId
         let tiles = await hubItems(
