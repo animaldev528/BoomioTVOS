@@ -692,6 +692,32 @@ final class CinemetaCatalogRepository: CatalogRepository {
         }
     }
 
+    /// Stores a metadata answer known to be incomplete — today, a series record
+    /// with no episode list — without marking it full. `isCachedFullMetadata`
+    /// stays false, so the next visit re-fetches instead of serving the hollow
+    /// record (and its Play-only details screen) for the whole session.
+    func cachePartialMetadata(_ meta: NuvioMeta, requestedID: String? = nil, context: String? = nil) {
+        let context = context ?? Self.metadataCacheContext
+        guard !Task.isCancelled else { return }
+        Self.metadataCacheQueue.sync(flags: .barrier) {
+            guard Self.prepareMetadataCache(for: context) else { return }
+            if let requestedID {
+                Self.cachedMetaById[requestedID] = meta
+            }
+            Self.cachedMetaById[meta.id] = meta
+        }
+    }
+
+    /// True when a record claiming to be a series carries no episode list, which
+    /// leaves the details screen with nothing but a Play button.
+    static func lacksEpisodeGuide(_ meta: NuvioMeta, for requestedType: String) -> Bool {
+        let claimsSeries = meta.isSeries
+            || isSeriesType(meta.type)
+            || isSeriesType(requestedType)
+        guard claimsSeries else { return false }
+        return (meta.videos ?? []).isEmpty
+    }
+
     private static func hasCanonicalIMDbStreamIdentity(_ meta: NuvioMeta) -> Bool {
         NuvioMeta.canonicalImdbID(from: meta.streamId) != nil
     }
@@ -1453,6 +1479,7 @@ final class CinemetaCatalogRepository: CatalogRepository {
             }
         }
 
+        var hollowAddonResult: NuvioMeta?
         if !addonURLs.isEmpty {
             let addonResult: NuvioMeta? = await withTaskGroup(of: NuvioMeta?.self) { group in
                 for (metaURL, candidateType) in addonURLs {
@@ -1468,16 +1495,28 @@ final class CinemetaCatalogRepository: CatalogRepository {
                         }
                     }
                 }
+                // A series record with no episode list cannot drive the details
+                // screen — it renders as a lone "Play" button. An add-on can
+                // answer a series id with exactly that hollow shape (bsf's
+                // /meta returns no `videos`), and the first answer used to win
+                // the race, which is why a search hit for an episode opened a
+                // poster with nothing to pick. Prefer an answer that carries
+                // the guide; hold the first hollow one as a last resort.
+                var held: NuvioMeta?
                 for await result in group {
-                    if let result {
-                        return result
-                    }
+                    guard let result else { continue }
+                    if !Self.lacksEpisodeGuide(result, for: metaType) { return result }
+                    if held == nil { held = result }
                 }
-                return nil
+                return held
             }
             if let addonResult {
-                cacheMetadata(addonResult, requestedID: id, context: metadataContext)
-                return addonResult
+                if Self.lacksEpisodeGuide(addonResult, for: metaType) {
+                    hollowAddonResult = addonResult
+                } else {
+                    cacheMetadata(addonResult, requestedID: id, context: metadataContext)
+                    return addonResult
+                }
             }
         }
 
@@ -1524,6 +1563,16 @@ final class CinemetaCatalogRepository: CatalogRepository {
                     lastError = error
                 }
             }
+        }
+
+        // The add-on answered with a hollow series record and Cinemeta could not
+        // supply an episode list either (disabled, or it simply has none). Show
+        // the thin record rather than nothing — but keep it out of the "full
+        // metadata" set, so opening the title again retries instead of serving
+        // the Play-only screen for the rest of the session.
+        if let hollowAddonResult {
+            cachePartialMetadata(hollowAddonResult, requestedID: id, context: metadataContext)
+            return hollowAddonResult
         }
 
         // If no /meta endpoint returned a response, check if the item was already cached from a catalog

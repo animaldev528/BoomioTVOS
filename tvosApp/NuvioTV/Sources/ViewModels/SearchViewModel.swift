@@ -227,7 +227,17 @@ class SearchViewModel: ObservableObject {
         searchTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let outcome = try await self.repository.searchWithOutcome(query: trimmed)
+                var outcome = try await self.repository.searchWithOutcome(query: trimmed)
+                // "Couldn't complete search" then works on the second try is a
+                // cold add-on manifest missing the collector's 2.5s deadline:
+                // the fetch itself is still in flight and lands in the manifest
+                // cache a moment later. Wait for it and ask once more instead
+                // of making the viewer retype the query.
+                if !outcome.isComplete, outcome.results.isEmpty {
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    guard !Task.isCancelled, self.searchGeneration == generation else { return }
+                    outcome = try await self.repository.searchWithOutcome(query: trimmed)
+                }
                 guard !Task.isCancelled, self.searchGeneration == generation else { return }
                 self.searchTimeoutTask?.cancel()
                 let found = outcome.results

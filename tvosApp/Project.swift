@@ -67,6 +67,14 @@ let tvOSDeployment = "18.0"
 // a bundled Trakt app — Settings then asks for a Client ID as before.
 let traktClientID = ProcessInfo.processInfo.environment["TRAKT_CLIENT_ID"] ?? ""
 
+// MARK: - Bundled TMDB key
+//
+// Android compiles a TMDB key in (`BuildConfig.TMDB_API_KEY`), so actor search
+// and person pages work there out of the box. Same contract here: CI supplies
+// it from the TMDB_API_KEY repository variable and the Info.plist expands it
+// into `TmdbApiKey`. Empty in a local build, where Settings asks for a key.
+let tmdbApiKey = ProcessInfo.processInfo.environment["TMDB_API_KEY"] ?? ""
+
 // MARK: - Project-level settings
 //
 // Carried over verbatim from the hand-maintained project.pbxproj. The warning
@@ -92,8 +100,9 @@ let projectBaseSettings: SettingsDictionary = [
     "TARGETED_DEVICE_FAMILY": "3",
     "TVOS_DEPLOYMENT_TARGET": .string(tvOSDeployment),
     "SWIFT_VERSION": "5.0",
-    // Consumed by NuvioTV/Info.plist; see "Bundled Trakt app" above.
+    // Consumed by NuvioTV/Info.plist; see the bundled keys above.
     "TRAKT_CLIENT_ID": .string(traktClientID),
+    "TMDB_API_KEY": .string(tmdbApiKey),
     "MARKETING_VERSION": .string(marketingVersion),
     "CURRENT_PROJECT_VERSION": .string(projectVersion),
 ]

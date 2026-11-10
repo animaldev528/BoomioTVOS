@@ -51,6 +51,10 @@ jobs:
           # code at trakt.tv/activate instead of typing an id. Unset builds
           # expand it to empty and simply ship without a bundled app.
           TRAKT_CLIENT_ID: ${{ vars.TRAKT_CLIENT_ID }}
+          # Public TMDB API key, expanded into TmdbApiKey in the Info.plist so
+          # actor search and person pages work without per-device setup, as on
+          # Android. Unset builds ship without one.
+          TMDB_API_KEY: ${{ vars.TMDB_API_KEY }}
         run: bash scripts/build-ipa.sh
 
       - name: Report output

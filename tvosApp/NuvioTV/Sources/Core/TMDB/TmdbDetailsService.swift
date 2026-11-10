@@ -192,8 +192,10 @@ enum TmdbDetailsService {
     ) async -> T {
         if requestContext != nil { return await operation() }
         let store = defaults ?? ProfileSettings.current
-        let rawKey = store.string(forKey: SettingsKey.tmdbApiKey)?
+        let typedKey = store.string(forKey: SettingsKey.tmdbApiKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        // A key typed in Settings wins; the build's own key is the fallback.
+        let rawKey = typedKey.isEmpty ? bundledApiKey : typedKey
         let keys = [
             SettingsKey.tmdbUseTrailers, SettingsKey.tmdbUseArtwork,
             SettingsKey.tmdbUseBasicInfo, SettingsKey.tmdbUseDetails,
@@ -207,7 +209,7 @@ enum TmdbDetailsService {
         })
         let context = RequestContext(
             apiKey: rawKey.isEmpty ? nil : rawKey,
-            isEnabled: (store.object(forKey: SettingsKey.tmdbEnabled) as? Bool) ?? false,
+            isEnabled: (store.object(forKey: SettingsKey.tmdbEnabled) as? Bool) ?? hasBundledApiKey,
             language: TmdbMetadataLanguage.resolvedLanguage(in: store),
             flags: flags
         )
@@ -245,16 +247,36 @@ enum TmdbDetailsService {
     }
 
     static var currentApiKey: String? { apiKey }
+
+    /// The TMDB key this build ships with.
+    ///
+    /// The Android client compiles one in (`BuildConfig.TMDB_API_KEY`), which is
+    /// why actor search, person pages and the rating badges work there with no
+    /// setup at all. Same contract here: CI injects the key from the
+    /// `TMDB_API_KEY` build setting into `TmdbApiKey` in the Info.plist. A key
+    /// the viewer types still wins, and a build without one keeps asking for
+    /// it in Settings → TMDB.
+    static var bundledApiKey: String {
+        let raw = ((Bundle.main.object(forInfoDictionaryKey: "TmdbApiKey") as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        // An unsubstituted build setting must never pass for a key.
+        return raw.hasPrefix("$(") ? "" : raw
+    }
+
+    static var hasBundledApiKey: Bool { !bundledApiKey.isEmpty }
+
     private static var apiKey: String? {
         if let requestContext { return requestContext.apiKey }
-        let key = ProfileSettings.current.string(forKey: SettingsKey.tmdbApiKey)?
+        let typed = ProfileSettings.current.string(forKey: SettingsKey.tmdbApiKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let key = typed.isEmpty ? bundledApiKey : typed
         return key.isEmpty ? nil : key
     }
 
     private static var isEnabled: Bool {
         if let requestContext { return requestContext.isEnabled }
-        return (ProfileSettings.current.object(forKey: SettingsKey.tmdbEnabled) as? Bool) ?? false
+        return (ProfileSettings.current.object(forKey: SettingsKey.tmdbEnabled) as? Bool)
+            ?? hasBundledApiKey
     }
 
     /// Whether TMDB can answer a lookup at all. Screens that show an empty
