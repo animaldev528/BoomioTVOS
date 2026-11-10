@@ -59,14 +59,39 @@ enum TraktConfig {
         isConfigured(in: ProfileSettings.current)
     }
 
+    /// The Trakt API app this build ships with.
+    ///
+    /// The Android TV client bakes its client id and secret in at build time
+    /// (`BuildConfig.TRAKT_CLIENT_ID` / `TRAKT_CLIENT_SECRET`, read from the build
+    /// machine's `local.properties`), which is why signing in there is nothing
+    /// but "enter this six-character code at trakt.tv/activate". This client
+    /// keeps the same contract: CI injects the pair into the Info.plist through
+    /// the `TRAKT_CLIENT_ID` / `TRAKT_CLIENT_SECRET` build settings, which come
+    /// from repository secrets — no key lives in the source tree, and a local
+    /// build simply ships without one.
+    static var bundledClientID: String { bundledValue("TraktClientID") }
+    static var bundledClientSecret: String { bundledValue("TraktClientSecret") }
+
+    /// True when this build carries its own Trakt app. Settings can then skip
+    /// the Client ID / Secret / Redirect rows: there is nothing to type.
+    static var hasBundledApp: Bool { !bundledClientID.isEmpty }
+
+    private static func bundledValue(_ key: String) -> String {
+        ((Bundle.main.object(forInfoDictionaryKey: key) as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// A value the user typed always wins; the bundled app is the fallback.
     static func clientID(in store: UserDefaults) -> String {
-        store.string(forKey: SettingsKey.traktClientID)?
+        let stored = store.string(forKey: SettingsKey.traktClientID)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return stored.isEmpty ? bundledClientID : stored
     }
 
     static func clientSecret(in store: UserDefaults) -> String {
-        store.string(forKey: SettingsKey.traktClientSecret)?
+        let stored = store.string(forKey: SettingsKey.traktClientSecret)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return stored.isEmpty ? bundledClientSecret : stored
     }
 
     static func isConfigured(in store: UserDefaults) -> Bool {

@@ -5516,41 +5516,53 @@ private struct IntegrationSettingsView: View {
                     fallback: "Watchlist, progress, history, comments, and recommendations"
                 )
             ) {
-                SettingsTextFieldRow(
-                    title: "Trakt Client ID",
-                    subtitle: "Create an API app at trakt.tv/oauth/applications",
-                    placeholder: L10n.string("debrid_not_set", fallback: "Not set"),
-                    text: $traktClientIDDraft,
-                    onCommit: {
-                        commitTraktRedirectURI()
-                        traktClientID = traktClientIDDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                        traktViewModel.credentialsDidChange()
-                    }
-                )
+                // A build that carries Boomio's own Trakt app (the same one the
+                // Android client bakes in) needs no credentials typed here at
+                // all — the card below signs in with a six-character code at
+                // trakt.tv/activate. The manual rows stay for builds without a
+                // bundled app, i.e. anyone building from source locally.
+                if TraktConfig.hasBundledApp {
+                    SettingsInfoRow(
+                        title: "Trakt app",
+                        value: "Built into this version — no keys needed"
+                    )
+                } else {
+                    SettingsTextFieldRow(
+                        title: "Trakt Client ID",
+                        subtitle: "Create an API app at trakt.tv/oauth/applications",
+                        placeholder: L10n.string("debrid_not_set", fallback: "Not set"),
+                        text: $traktClientIDDraft,
+                        onCommit: {
+                            commitTraktRedirectURI()
+                            traktClientID = traktClientIDDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                            traktViewModel.credentialsDidChange()
+                        }
+                    )
 
-                SettingsTextFieldRow(
-                    title: "Trakt Client Secret (optional)",
-                    subtitle: L10n.string(
-                        "tvos_settings_trakt_secret_optional",
-                        fallback: "Leave blank for new (PKCE) Trakt apps — only legacy apps still use a secret"
-                    ),
-                    placeholder: L10n.string("debrid_not_set", fallback: "Not set"),
-                    text: $traktClientSecretDraft,
-                    isSecure: true,
-                    onCommit: {
-                        traktClientSecret = traktClientSecretDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                        traktViewModel.credentialsDidChange()
-                    }
-                )
+                    SettingsTextFieldRow(
+                        title: "Trakt Client Secret (optional)",
+                        subtitle: L10n.string(
+                            "tvos_settings_trakt_secret_optional",
+                            fallback: "Leave blank for new (PKCE) Trakt apps — only legacy apps still use a secret"
+                        ),
+                        placeholder: L10n.string("debrid_not_set", fallback: "Not set"),
+                        text: $traktClientSecretDraft,
+                        isSecure: true,
+                        onCommit: {
+                            traktClientSecret = traktClientSecretDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                            traktViewModel.credentialsDidChange()
+                        }
+                    )
 
-                SettingsTextFieldRow(
-                    title: "Trakt Redirect URI",
-                    subtitle: "Must exactly match this app's registered Trakt redirect URI; used when refreshing tokens",
-                    placeholder: TraktConfig.defaultRedirectURI,
-                    text: $traktRedirectURIDraft,
-                    fieldWidth: 460,
-                    onCommit: commitTraktRedirectURI
-                )
+                    SettingsTextFieldRow(
+                        title: "Trakt Redirect URI",
+                        subtitle: "Must exactly match this app's registered Trakt redirect URI; used when refreshing tokens",
+                        placeholder: TraktConfig.defaultRedirectURI,
+                        text: $traktRedirectURIDraft,
+                        fieldWidth: 460,
+                        onCommit: commitTraktRedirectURI
+                    )
+                }
 
                 TraktConnectionSettingsCard(
                     viewModel: traktViewModel,
@@ -6008,7 +6020,10 @@ private struct IntegrationSettingsView: View {
 
     private var traktCredentialsReady: Bool {
         // Trakt deprecated the client secret (PKCE-only apps): a Client ID is enough.
-        !traktClientIDDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        // A build carrying Boomio's own Trakt app has one already, so Connect is
+        // live with nothing typed — the Android client's behaviour.
+        TraktConfig.hasBundledApp
+            || !traktClientIDDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var simklCredentialsReady: Bool {
