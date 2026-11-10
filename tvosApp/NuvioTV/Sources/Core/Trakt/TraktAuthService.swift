@@ -61,16 +61,15 @@ enum TraktConfig {
 
     /// The Trakt API app this build ships with.
     ///
-    /// The Android TV client bakes its client id and secret in at build time
-    /// (`BuildConfig.TRAKT_CLIENT_ID` / `TRAKT_CLIENT_SECRET`, read from the build
-    /// machine's `local.properties`), which is why signing in there is nothing
-    /// but "enter this six-character code at trakt.tv/activate". This client
-    /// keeps the same contract: CI injects the pair into the Info.plist through
-    /// the `TRAKT_CLIENT_ID` / `TRAKT_CLIENT_SECRET` build settings, which come
-    /// from repository secrets — no key lives in the source tree, and a local
-    /// build simply ships without one.
+    /// The Android TV client bakes its client id in at build time
+    /// (`BuildConfig.TRAKT_CLIENT_ID`, read from the build machine's
+    /// `local.properties`), which is why signing in there is nothing but
+    /// "enter this six-character code at trakt.tv/activate". This client keeps
+    /// the same contract: CI injects the id into the Info.plist through the
+    /// `TRAKT_CLIENT_ID` build setting, which comes from a repository variable
+    /// — a client id is an app identifier, not a secret, and Trakt's device
+    /// flow takes `client_id` and `code` only. A local build ships without one.
     static var bundledClientID: String { bundledValue("TraktClientID") }
-    static var bundledClientSecret: String { bundledValue("TraktClientSecret") }
 
     /// True when this build carries its own Trakt app. Settings can then skip
     /// the Client ID / Secret / Redirect rows: there is nothing to type.
@@ -89,9 +88,8 @@ enum TraktConfig {
     }
 
     static func clientSecret(in store: UserDefaults) -> String {
-        let stored = store.string(forKey: SettingsKey.traktClientSecret)?
+        store.string(forKey: SettingsKey.traktClientSecret)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return stored.isEmpty ? bundledClientSecret : stored
     }
 
     static func isConfigured(in store: UserDefaults) -> Bool {

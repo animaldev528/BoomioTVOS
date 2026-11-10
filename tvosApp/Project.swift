@@ -54,6 +54,19 @@ let projectVersion = "82"
 // LibTrueHD 3.0.0 requires tvOS 18; APAC rendering itself is gated to tvOS 26+.
 let tvOSDeployment = "18.0"
 
+// MARK: - Bundled Trakt app
+//
+// The Android TV client bakes its Trakt client id in at build time, which is
+// why signing in there is a six-character code at trakt.tv/activate and
+// nothing else. Only the *client id* is baked — Trakt's device-code exchange
+// takes `client_id` and `code` and nothing more, and it has deprecated the
+// client secret for user sign-in ("server to server only"), so no secret is
+// shipped. The value reaches the build as a repository variable and
+// `NuvioTV/Info.plist` expands it into `TraktClientID` through this setting.
+// A local build has no variable, expands it to empty, and simply ships without
+// a bundled Trakt app — Settings then asks for a Client ID as before.
+let traktClientID = ProcessInfo.processInfo.environment["TRAKT_CLIENT_ID"] ?? ""
+
 // MARK: - Project-level settings
 //
 // Carried over verbatim from the hand-maintained project.pbxproj. The warning
@@ -79,6 +92,8 @@ let projectBaseSettings: SettingsDictionary = [
     "TARGETED_DEVICE_FAMILY": "3",
     "TVOS_DEPLOYMENT_TARGET": .string(tvOSDeployment),
     "SWIFT_VERSION": "5.0",
+    // Consumed by NuvioTV/Info.plist; see "Bundled Trakt app" above.
+    "TRAKT_CLIENT_ID": .string(traktClientID),
     "MARKETING_VERSION": .string(marketingVersion),
     "CURRENT_PROJECT_VERSION": .string(projectVersion),
 ]
