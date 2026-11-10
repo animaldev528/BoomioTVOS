@@ -19,6 +19,9 @@ struct SearchResultsRails: View {
     var onBlurItem: ((NuvioMeta) -> Void)? = nil
     var onLongPressItem: ((NuvioMeta) -> Void)? = nil
     var onSelectPerson: ((TmdbPersonMetadata) -> Void)? = nil
+    /// Pins this row to Home as a saved search. Only an add-on row carries the
+    /// add-on id and query that make that possible; the built-in rows do not.
+    var onAddSectionToHome: ((CatalogSearchSection) -> Void)? = nil
 
     private let posterWidth: CGFloat = 210
     private let posterHeight: CGFloat = 315
@@ -47,7 +50,16 @@ struct SearchResultsRails: View {
 
     private func resultsRow(_ section: CatalogSearchSection) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            rowTitle(section.title)
+            HStack(spacing: 20) {
+                rowTitle(section.title)
+                if section.addonId != nil, section.searchTerm != nil,
+                   let onAddSectionToHome {
+                    AddSearchRowButton(title: section.title) {
+                        onAddSectionToHome(section)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: cardSpacing) {
                     ForEach(section.results) { item in
@@ -93,6 +105,35 @@ struct SearchResultsRails: View {
             .foregroundColor(.white.opacity(0.9))
             .lineLimit(1)
             .padding(.horizontal, contentInset)
+    }
+}
+
+/// Pins a search row to Home. A visible control rather than a card long-press:
+/// the card's hold-menu is built inside the card itself and cannot take an
+/// extra item, so an action hidden there is an action nobody can reach.
+private struct AddSearchRowButton: View {
+    let title: String
+    let action: () -> Void
+
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: "plus.rectangle.on.rectangle")
+                Text(L10n.string("search_add_row_to_home", fallback: "Add row to Home"))
+            }
+            .font(.system(size: 18, weight: .semibold))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(Color.white.opacity(focused ? 0.28 : 0.12), in: Capsule())
+            .foregroundColor(.white)
+        }
+        .buttonStyle(.plain)
+        .focused($focused)
+        .accessibilityLabel(
+            Text("\(L10n.string("search_add_row_to_home", fallback: "Add row to Home")): \(title)")
+        )
     }
 }
 

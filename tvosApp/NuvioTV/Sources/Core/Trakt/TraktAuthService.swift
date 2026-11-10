@@ -59,9 +59,34 @@ enum TraktConfig {
         isConfigured(in: ProfileSettings.current)
     }
 
+    /// The Trakt API app this build ships with.
+    ///
+    /// The Android TV client bakes its client id in at build time
+    /// (`BuildConfig.TRAKT_CLIENT_ID`, read from the build machine's
+    /// `local.properties`), which is why signing in there is nothing but
+    /// "enter this six-character code at trakt.tv/activate". This client keeps
+    /// the same contract: CI injects the id into the Info.plist through the
+    /// `TRAKT_CLIENT_ID` build setting, which comes from a repository variable
+    /// — a client id is an app identifier, not a secret, and Trakt's device
+    /// flow takes `client_id` and `code` only. A local build ships without one.
+    static var bundledClientID: String { bundledValue("TraktClientID") }
+
+    /// True when this build carries its own Trakt app. Settings can then skip
+    /// the Client ID / Secret / Redirect rows: there is nothing to type.
+    static var hasBundledApp: Bool { !bundledClientID.isEmpty }
+
+    private static func bundledValue(_ key: String) -> String {
+        let raw = ((Bundle.main.object(forInfoDictionaryKey: key) as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        // A build setting that never got substituted must not pass for an id.
+        return raw.hasPrefix("$(") ? "" : raw
+    }
+
+    /// A value the user typed always wins; the bundled app is the fallback.
     static func clientID(in store: UserDefaults) -> String {
-        store.string(forKey: SettingsKey.traktClientID)?
+        let stored = store.string(forKey: SettingsKey.traktClientID)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return stored.isEmpty ? bundledClientID : stored
     }
 
     static func clientSecret(in store: UserDefaults) -> String {

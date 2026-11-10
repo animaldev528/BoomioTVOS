@@ -31,6 +31,9 @@ class SearchViewModel: ObservableObject {
     @Published var sections: [CatalogSearchSection] = []
     /// TMDB people matching the query, shown above the title rows.
     @Published var people: [TmdbPersonMetadata] = []
+    /// True while the people lookup for the current query is in flight, so the
+    /// empty state does not pre-empt a rail that is about to answer.
+    @Published private(set) var isLoadingPeople = false
     @Published var isLoading = false
     @Published var error: String?
     @Published var emptyStateReason: CatalogSearchReason?
@@ -46,8 +49,14 @@ class SearchViewModel: ObservableObject {
     private var allResults: [NuvioMeta] = []
     private var allSections: [CatalogSearchSection] = []
     private var peopleTask: Task<Void, Never>?
+    /// The query `people` belongs to, so a new query can drop a stale rail.
+    private var peopleQuery: String?
     private var cancellables = Set<AnyCancellable>()
     private var searchTask: Task<Void, Never>?
+    /// The AI search catalogs' lane. It runs beside the fast fan-out and merges
+    /// its rows into the grid when it lands (see `searchSlowOutcome`), so a
+    /// multi-second model lookup cannot delay or cancel the quick sources.
+    private var slowSearchTask: Task<Void, Never>?
     private var searchTimeoutTask: Task<Void, Never>?
     private var searchGeneration: UInt64 = 0
     /// Runs after the raw search grid is visible: refreshes the top results'
@@ -118,6 +127,8 @@ class SearchViewModel: ObservableObject {
             results = []
             sections = []
             people = []
+            peopleQuery = nil
+            isLoadingPeople = false
             error = nil
             emptyStateReason = nil
             isLoading = false
@@ -166,6 +177,8 @@ class SearchViewModel: ObservableObject {
         let generation = searchGeneration
         searchTimeoutTask?.cancel()
         searchTask?.cancel()
+        slowSearchTask?.cancel()
+        slowSearchTask = nil
         enrichmentTask?.cancel()
 
         guard !trimmed.isEmpty else {
@@ -175,11 +188,18 @@ class SearchViewModel: ObservableObject {
             results = []
             sections = []
             people = []
+            peopleQuery = nil
+            isLoadingPeople = false
             error = nil
             emptyStateReason = nil
             isLoading = false
             return
         }
+
+        // People are a TMDB lookup, not an add-on catalog, so they start here
+        // rather than after the fan-out: a cache hit, a failed search or a
+        // timeout must not swallow an actor query that would have answered.
+        searchPeople(for: trimmed, generation: generation)
 
         if let cached = cachedResults[cacheKey] {
             searchViewLogger.notice(
@@ -192,7 +212,13 @@ class SearchViewModel: ObservableObject {
             emptyStateReason = cached.results.isEmpty ? cached.reason : nil
             isLoading = false
             if !cached.results.isEmpty { commitRecentSearch(trimmed) }
-            searchPeople(for: trimmed, generation: generation)
+            // The AI rows are never cached (they cost a model call per query),
+            // so the slow lane runs on every query, cache hit included.
+            startSlowSearch(query: trimmed, generation: generation)
+            if cached.results.isEmpty && slowSearchTask != nil {
+                isLoading = true
+                emptyStateReason = nil
+            }
             if SearchResultEnrichment.hasIncompleteLeadingResults(cached.results)
                 || SearchResultEnrichment.hasIncompleteLeadingSections(cached.sections) {
                 enrich(cached.results, cacheKey: cacheKey, generation: generation, cacheable: true)
@@ -214,20 +240,34 @@ class SearchViewModel: ObservableObject {
         searchTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let outcome = try await self.repository.searchWithOutcome(query: trimmed)
+                var outcome = try await self.repository.searchWithOutcome(query: trimmed)
+                // "Couldn't complete search" then works on the second try is a
+                // cold add-on manifest missing the collector's 2.5s deadline:
+                // the fetch itself is still in flight and lands in the manifest
+                // cache a moment later. Wait for it and ask once more instead
+                // of making the viewer retype the query.
+                if !outcome.isComplete, outcome.results.isEmpty {
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    guard !Task.isCancelled, self.searchGeneration == generation else { return }
+                    outcome = try await self.repository.searchWithOutcome(query: trimmed)
+                }
                 guard !Task.isCancelled, self.searchGeneration == generation else { return }
                 self.searchTimeoutTask?.cancel()
                 let found = outcome.results
                 self.allResults = found
                 self.allSections = outcome.sections
-                self.searchPeople(for: trimmed, generation: generation)
                 if outcome.isComplete {
                     self.cache(outcome, for: cacheKey)
                 }
                 self.applyFilter()
                 if !found.isEmpty { self.commitRecentSearch(trimmed) }
-                self.emptyStateReason = outcome.isComplete
-                    ? (found.isEmpty ? outcome.reason : nil)
+                // The slow lane owns the AI rows. With nothing else to show, the
+                // screen keeps spinning for it instead of claiming there were no
+                // results — that claim is only true once the lane has answered.
+                self.startSlowSearch(query: trimmed, generation: generation)
+                let slowPending = self.slowSearchTask != nil
+                self.emptyStateReason = outcome.isComplete || slowPending
+                    ? (found.isEmpty && !slowPending ? outcome.reason : nil)
                     : .requestFailed
                 if self.emptyStateReason == .requestFailed && found.isEmpty {
                     self.error = L10n.string(
@@ -237,7 +277,7 @@ class SearchViewModel: ObservableObject {
                 } else {
                     self.error = nil
                 }
-                self.isLoading = false
+                self.isLoading = found.isEmpty && slowPending
                 if SearchResultEnrichment.hasIncompleteLeadingResults(found)
                     || SearchResultEnrichment.hasIncompleteLeadingSections(outcome.sections) {
                     self.enrich(
@@ -261,6 +301,9 @@ class SearchViewModel: ObservableObject {
 
     private func handleSearchTimeout(generation: UInt64) {
         guard self.searchGeneration == generation, self.isLoading else { return }
+        // An AI lookup can legitimately run past the fast lane's timeout; the
+        // slow lane has its own deadline and ends the spinner when it answers.
+        if slowSearchTask != nil { return }
         self.searchTask?.cancel()
         self.emptyStateReason = .requestFailed
         self.error = L10n.string(
@@ -322,18 +365,85 @@ class SearchViewModel: ObservableObject {
         }
     }
 
+    /// Asks the slow search catalogs (see `searchSlowOutcome`) and folds their
+    /// rows into the grid that the fast fan-out already published. Guarded by
+    /// the same generation/query check as enrichment, so a late model answer
+    /// can never land on a newer query.
+    private func startSlowSearch(query: String, generation: UInt64) {
+        slowSearchTask?.cancel()
+        slowSearchTask = Task { [weak self] in
+            guard let self else { return }
+            let outcome = await self.repository.searchSlowOutcome(query: query)
+            let key = query.trimmingCharacters(in: .whitespacesAndNewlines)
+                .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            guard !Task.isCancelled,
+                  self.searchGeneration == generation,
+                  self.normalizedQuery() == key
+            else { return }
+            self.slowSearchTask = nil
+            guard !outcome.sections.isEmpty else {
+                // Nothing from the slow lane: an empty grid that was waiting on
+                // it gets its honest empty state now.
+                if self.isLoading && self.allResults.isEmpty {
+                    self.isLoading = false
+                    self.emptyStateReason = .noResults
+                }
+                return
+            }
+            let resulting = CinemetaCatalogRepository.deduplicatedSearchResults(
+                outcome.sections.flatMap { $0.results }
+            )
+            // An AI episode result is one episode, never its show: merging it
+            // with the fast grid by title would collapse "The Simpsons S5E3"
+            // into the series tile the other catalogs returned. It keeps its own
+            // row; the flat list carries both.
+            var merged = self.allSections
+            for section in outcome.sections {
+                if let index = merged.firstIndex(where: { $0.id == section.id }) {
+                    merged[index] = section
+                } else {
+                    merged.append(section)
+                }
+            }
+            self.allSections = merged
+            self.allResults = CinemetaCatalogRepository.deduplicatedSearchResults(
+                merged.flatMap { $0.results }
+            )
+            if resulting.isEmpty && self.allResults.isEmpty {
+                self.isLoading = false
+                self.emptyStateReason = .noResults
+                return
+            }
+            self.applyFilter()
+            self.isLoading = false
+            self.error = nil
+            self.emptyStateReason = nil
+        }
+    }
+
     /// People are a TMDB lookup, not an add-on catalog, so they run beside the
     /// catalog fan-out and never delay it. Cancelled on the next query.
     private func searchPeople(for query: String, generation: UInt64) {
         peopleTask?.cancel()
         guard TmdbDetailsService.canSearchPeople else {
             people = []
+            peopleQuery = query
+            isLoadingPeople = false
             return
         }
+        // The previous query's rail is not an answer to this one, so it is
+        // dropped the moment the query changes rather than lingering until
+        // TMDB replies.
+        if peopleQuery != query {
+            people = []
+            peopleQuery = query
+        }
+        isLoadingPeople = true
         peopleTask = Task { [weak self] in
             let found = await TmdbDetailsService.searchPeople(query: query, limit: 10)
             guard let self, !Task.isCancelled, self.searchGeneration == generation else { return }
             self.people = found
+            self.isLoadingPeople = false
         }
     }
 
@@ -370,7 +480,9 @@ class SearchViewModel: ObservableObject {
             addonName: section.addonName,
             catalogId: section.catalogId,
             type: section.type,
-            results: items
+            results: items,
+                addonId: section.addonId,
+                searchTerm: section.searchTerm
         )
     }
 
@@ -436,6 +548,8 @@ class SearchViewModel: ObservableObject {
         results = []
         sections = []
         people = []
+        peopleQuery = nil
+        isLoadingPeople = false
         error = nil
         emptyStateReason = nil
         isLoading = false

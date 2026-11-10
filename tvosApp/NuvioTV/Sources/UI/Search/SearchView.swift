@@ -286,13 +286,42 @@ struct SearchView: View {
                 addonName: section.addonName,
                 catalogId: section.catalogId,
                 type: section.type,
-                results: items
+                results: items,
+                addonId: section.addonId,
+                searchTerm: section.searchTerm
             )
         }
     }
 
+    /// People are their own rail, so a query that matches only an actor still
+    /// needs the rails even when no catalog returned a single title.
     private var usesSourceRails: Bool {
-        visibleSections.count > 1 || (visibleSections.count == 1 && !viewModel.people.isEmpty)
+        if visibleSections.count > 1 || !viewModel.people.isEmpty { return true }
+        // One add-on row still needs the rails: that row is where "Add row to
+        // Home" lives, and an episode search answers with exactly one row.
+        return visibleSections.contains { $0.addonId != nil && $0.searchTerm != nil }
+    }
+
+    /// Pins one source row to Home as a saved query. The collection keeps the
+    /// add-on, its catalog and the term, so Home re-asks that catalog on every
+    /// load — the only shape that works for an episode search, whose answer is
+    /// a query rather than a fixed list.
+    private func addRowToHome(_ section: CatalogSearchSection) {
+        guard let addonId = section.addonId,
+              let term = section.searchTerm?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !term.isEmpty else { return }
+        let title = "\(section.title) · \(term)"
+        let source: [String: Any] = [
+            "provider": "addon",
+            "addonId": addonId,
+            "addon_id": addonId,
+            "type": section.type,
+            "catalogId": section.catalogId,
+            "catalog_id": section.catalogId,
+            "search": term,
+            "title": title
+        ]
+        CollectionQuickAdd.addList(source: source, fallbackTitle: title)
     }
 
     @ViewBuilder
@@ -307,14 +336,26 @@ struct SearchView: View {
             centeredState {
                 messageState(icon: "wifi.exclamationmark", title: error)
             }
-        } else if visibleResults.isEmpty {
-            let reason = viewModel.emptyStateReason ?? .noResults
-            centeredState {
-                messageState(
-                    icon: reason.icon,
-                    title: reason.title,
-                    subtitle: reason.subtitle(for: viewModel.searchText)
-                )
+        } else if visibleResults.isEmpty && viewModel.people.isEmpty {
+            // An actor query matches no title by design: the People rail is
+            // the answer, so the empty state must not pre-empt it — and while
+            // that lookup is still in flight the screen keeps spinning rather
+            // than claiming there were no results.
+            if viewModel.isLoadingPeople {
+                centeredState {
+                    ProgressView()
+                        .scaleEffect(1.6)
+                        .tint(.white)
+                }
+            } else {
+                let reason = viewModel.emptyStateReason ?? .noResults
+                centeredState {
+                    messageState(
+                        icon: reason.icon,
+                        title: reason.title,
+                        subtitle: reason.subtitle(for: viewModel.searchText)
+                    )
+                }
             }
         } else if usesSourceRails, let onOpenResult {
             SearchResultsRails(
@@ -326,7 +367,8 @@ struct SearchView: View {
                 },
                 onFocusItem: { item in lastFocusedResultID = item.id },
                 onLongPressItem: onLongPress,
-                onSelectPerson: onOpenPerson
+                onSelectPerson: onOpenPerson,
+                onAddSectionToHome: { section in addRowToHome(section) }
             )
         } else {
             resultsGrid

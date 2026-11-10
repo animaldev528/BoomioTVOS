@@ -245,16 +245,14 @@ struct DetailsScreen: View {
                         finishInitialPlaybackRequest(requestID)
                     },
                     onPlayClick: {
-                        // Movie (or a series with no episode list): make sure streams
-                        // are loaded for the canonical title id, then either auto-select
-                        // or open the picker.
+                        // Movie (or a series whose episode is resolved first):
+                        // make sure streams are loaded for the play target, then
+                        // either auto-select or open the picker.
                         if creatingWatchPartyRoom, let meta = viewModel.uiState.meta, !meta.isSeries {
                             onWatchPartyMediaSelected?(meta, nil)
                             return
                         }
-                        pendingEpisodeSubtitle = ""
-                        pendingEpisode = nil
-                        startStreamFlow(streamId: viewModel.uiState.meta?.streamId ?? id, type: viewModel.uiState.meta?.type ?? type, reload: viewModel.uiState.streams.isEmpty)
+                        startTitleStreamFlow(forceManualPicker: false)
                     },
                     onPlayManually: {
                         // Hold-to-play-manually: always open the picker even when Auto Select is on.
@@ -262,14 +260,7 @@ struct DetailsScreen: View {
                             onWatchPartyMediaSelected?(meta, nil)
                             return
                         }
-                        pendingEpisodeSubtitle = ""
-                        pendingEpisode = nil
-                        startStreamFlow(
-                            streamId: viewModel.uiState.meta?.streamId ?? id,
-                            type: viewModel.uiState.meta?.type ?? type,
-                            reload: viewModel.uiState.streams.isEmpty,
-                            forceManualPicker: true
-                        )
+                        startTitleStreamFlow(forceManualPicker: true)
                     },
                     onHostWatchParty: onCreateWatchParty == nil ? nil : { episode in
                         guard let meta = viewModel.uiState.meta else { return }
@@ -632,15 +623,80 @@ struct DetailsScreen: View {
             } ?? requested
         }
         pendingEpisode = requestedEpisode
-        if let episode = requestedEpisode {
+        if let episode = requestedEpisode ?? episodeForStreamRequest(meta: meta) {
+            if requestedEpisode == nil { pendingEpisode = episode }
             pendingEpisodeSubtitle = "S\(episode.season) · E\(episode.episode) · \(episode.title)"
             let streamId = canonicalEpisodeStreamId(for: episode, meta: meta)
             viewModel.prepareStreams(forId: streamId, type: "series")
-        } else {
+        } else if !isSeries(meta) {
             pendingEpisodeSubtitle = ""
             viewModel.prepareStreams(forId: meta.streamId, type: meta.type)
         }
         isStreamPickerPresented = true
+    }
+
+    private func isSeries(_ meta: NuvioMeta) -> Bool {
+        meta.isSeries || NuvioMeta.isSeriesType(meta.type)
+    }
+
+    /// The episode the source picker asks about when the viewer opened the
+    /// screen without one.
+    ///
+    /// A series has no sources of its own, and asking the media plane for the
+    /// bare series id is not harmless: bsf answers it by scraping the whole
+    /// show, and every release it finds is filed in its mesh cache with no
+    /// season and no episode — where the "OR is a season pack" clause then lets
+    /// it satisfy *every* episode request for that show. One such request for
+    /// The Simpsons put 598 rows in the cache and turned every episode's source
+    /// list into season packs. Asking for a real episode is the same request a
+    /// viewer makes by pressing Play, and it keeps the cache honest.
+    private func episodeForStreamRequest(meta: NuvioMeta) -> NuvioVideo? {
+        guard isSeries(meta) else { return nil }
+        if let pendingEpisode { return pendingEpisode }
+        // Play resumes where the viewer left off; the guide's first episode is
+        // the fallback when there is no progress to continue.
+        if let target = viewModel.resolveDefaultPlayTarget(for: meta), let episode = target.episode {
+            return episode
+        }
+        return (meta.videos ?? [])
+            .filter { $0.season > 0 }
+            .min { ($0.season, $0.episode) < ($1.season, $1.episode) }
+    }
+
+    /// Play and hold-to-play-manually on the title's own button. A series has no
+    /// stream of its own, so this always resolves an episode first — never the
+    /// bare series id.
+    private func startTitleStreamFlow(forceManualPicker: Bool) {
+        guard let meta = viewModel.uiState.meta else {
+            startStreamFlow(
+                streamId: id,
+                type: type,
+                reload: viewModel.uiState.streams.isEmpty,
+                forceManualPicker: forceManualPicker
+            )
+            return
+        }
+        if let episode = episodeForStreamRequest(meta: meta) {
+            pendingEpisodeSubtitle = "S\(episode.season) · E\(episode.episode) · \(episode.title)"
+            pendingEpisode = episode
+            let streamId = canonicalEpisodeStreamId(for: episode, meta: meta)
+            let isPreFetched = viewModel.prefetchedStreamId == streamId && !viewModel.uiState.streams.isEmpty
+            startStreamFlow(
+                streamId: streamId,
+                type: "series",
+                reload: !isPreFetched,
+                forceManualPicker: forceManualPicker
+            )
+        } else {
+            pendingEpisodeSubtitle = ""
+            pendingEpisode = nil
+            startStreamFlow(
+                streamId: meta.streamId,
+                type: meta.type,
+                reload: viewModel.uiState.streams.isEmpty,
+                forceManualPicker: forceManualPicker
+            )
+        }
     }
 
     private func canonicalEpisodeStreamId(for video: NuvioVideo, meta: NuvioMeta?) -> String {
@@ -650,10 +706,11 @@ struct DetailsScreen: View {
     private func refreshSources() {
         guard let meta = viewModel.uiState.meta else { return }
         streamPickerAvailabilityMessage = nil
-        if let episode = pendingEpisode {
+        if let episode = pendingEpisode ?? episodeForStreamRequest(meta: meta) {
+            if pendingEpisode == nil { pendingEpisode = episode }
             let streamId = canonicalEpisodeStreamId(for: episode, meta: meta)
             viewModel.prepareStreams(forId: streamId, type: "series", forceRefresh: true)
-        } else {
+        } else if !isSeries(meta) {
             viewModel.prepareStreams(forId: meta.streamId, type: meta.type, forceRefresh: true)
         }
     }
@@ -910,7 +967,13 @@ struct DetailsScreen: View {
             let available = displayed.filter { $0.unavailabilityReason == nil && !$0.isNotPlayable }
             let pool: [NuvioStream]
             if preserveAddonOrder {
-                pool = available
+                // The add-on's own order, but a single episode always ahead of
+                // a season pack: the pack is what the picker would otherwise
+                // take first for a long-running show.
+                pool = SmartPlaybackSelector.preferringEpisode(
+                    available,
+                    target: SmartPlaybackSelector.episodeTarget(for: viewModel.prefetchedEpisode)
+                )
             } else {
                 // Filter out 0-res / ticket streams if valid streams exist
                 let valid = available.filter {
@@ -945,7 +1008,8 @@ struct DetailsScreen: View {
                 shouldMatchSubtitles: smartSubtitleMatching,
                 includeDebrid: debrid.isEnabled || TorrentSettings.isEnabled(),
                 preferredTags: preferredTags,
-                cachedOnly: cachedOnly
+                cachedOnly: cachedOnly,
+                episode: SmartPlaybackSelector.episodeTarget(for: viewModel.prefetchedEpisode)
             )
         }
 
@@ -1153,7 +1217,10 @@ struct DetailsScreen: View {
                     let available = displayed.filter { $0.unavailabilityReason == nil && !$0.isNotPlayable }
                     let pool: [NuvioStream]
                     if preserveAddonOrder {
-                        pool = available
+                        pool = SmartPlaybackSelector.preferringEpisode(
+                            available,
+                            target: SmartPlaybackSelector.episodeTarget(for: await viewModel.prefetchedEpisode)
+                        )
                     } else {
                         let valid = available.filter {
                             !SmartPlaybackSelector.isLowQualityOrTicketStream($0) && StreamPickerListBuilder.resolution(for: $0) >= 720
@@ -1185,7 +1252,8 @@ struct DetailsScreen: View {
                         shouldMatchSubtitles: smartSubtitleMatching,
                         includeDebrid: debridIsEnabled || torrentIsEnabled,
                         preferredTags: preferredTags,
-                        cachedOnly: cachedOnly
+                        cachedOnly: cachedOnly,
+                        episode: SmartPlaybackSelector.episodeTarget(for: await viewModel.prefetchedEpisode)
                     )
                 }
 
@@ -3423,6 +3491,94 @@ actor YouTubeTrailerResolver {
 }
 
 enum SmartPlaybackSelector {
+    /// The episode a stream is being picked for. A season pack and a single
+    /// episode look identical to the quality scorer — the add-ons return both
+    /// for the same `show:season:episode` request — so without this the best
+    /// 2160p stream is very often the 60 GB pack of the whole show, which the
+    /// player then opens at the wrong place. Android passes the episode id
+    /// through and lets its own add-on pick; tvOS has to rank for it.
+    struct EpisodeTarget: Equatable {
+        let season: Int
+        let episode: Int
+    }
+
+    /// Read through a helper rather than `viewModel.prefetchedEpisode.map {}`:
+    /// the map closure is non-isolated, so touching the view model's
+    /// main-actor state inside it is a concurrency error.
+    static func episodeTarget(for video: NuvioVideo?) -> EpisodeTarget? {
+        guard let video, video.episode > 0 else { return nil }
+        return EpisodeTarget(season: video.season, episode: video.episode)
+    }
+
+    /// Positive when the stream names THIS episode, negative when it names a
+    /// different one or a pack. Zero when the stream names no episode at all
+    /// (debrid entries often carry only a cache label), so unknown streams keep
+    /// their quality order instead of being pushed to the bottom.
+    static func episodeRankingBoost(for stream: NuvioStream, target: EpisodeTarget?) -> Int {
+        guard let target, target.episode > 0 else { return 0 }
+        let text = [stream.name, stream.description, stream.filename]
+            .compactMap { $0 }
+            .joined(separator: " ")
+            .lowercased()
+        guard !text.isEmpty else { return 0 }
+
+        let markers = Self.seasonEpisodeMarkers(in: text)
+        if !markers.isEmpty {
+            let matches = markers.contains { $0.season == target.season && $0.episode == target.episode }
+            return matches ? 45_000 : -45_000
+        }
+        // No `SxxExx` at all. "Season 1-37", "S01-S36", "Complete Series" are
+        // packs, which are the wrong stream for a single episode whenever a
+        // matching release is also on offer.
+        if text.range(of: #"s\d{1,2}\s*-\s*s?\d{1,2}"#, options: .regularExpression) != nil {
+            return -30_000
+        }
+        if text.range(of: #"season\s*\d{1,2}\s*-\s*\d{1,2}"#, options: .regularExpression) != nil {
+            return -30_000
+        }
+        if text.contains("complete series") || text.contains("complete season")
+            || text.contains("season pack") || text.contains("series pack") {
+            return -30_000
+        }
+        return 0
+    }
+
+    /// Every `S03E07` / `3x07` in the text, however the scene punctuates it.
+    private static func seasonEpisodeMarkers(in text: String) -> [(season: Int, episode: Int)] {
+        var markers: [(season: Int, episode: Int)] = []
+        let patterns = [
+            #"s(\d{1,2})[\s._-]*e(\d{1,3})"#,
+            #"\b(\d{1,2})x(\d{1,3})\b"#,
+        ]
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let range = NSRange(text.startIndex..<text.endIndex, in: text)
+            for match in regex.matches(in: text, range: range) where match.numberOfRanges > 2 {
+                guard let s = Range(match.range(at: 1), in: text),
+                      let e = Range(match.range(at: 2), in: text),
+                      let season = Int(text[s]), let episode = Int(text[e]) else { continue }
+                markers.append((season, episode))
+            }
+        }
+        return markers
+    }
+
+    /// Stable order that keeps every episode match ahead of every pack, used on
+    /// the "preserve the add-on's order" path, which otherwise takes whichever
+    /// stream the add-on happened to list first.
+    static func preferringEpisode(_ streams: [NuvioStream], target: EpisodeTarget?) -> [NuvioStream] {
+        guard let target else { return streams }
+        let scored = streams.enumerated().map { index, stream in
+            (index: index, stream: stream, boost: episodeRankingBoost(for: stream, target: target))
+        }
+        return scored
+            .sorted { lhs, rhs in
+                if lhs.boost != rhs.boost { return lhs.boost > rhs.boost }
+                return lhs.index < rhs.index
+            }
+            .map(\.stream)
+    }
+
     /// Cached-only is a VOD preference. Live and sports catalogs often have
     /// no cache markers. Keep the legacy `tv` alias local to this policy instead
     /// of changing shared type classification used by series handling.
@@ -3440,7 +3596,8 @@ enum SmartPlaybackSelector {
         shouldMatchSubtitles: Bool,
         includeDebrid: Bool = false,
         preferredTags: StreamQualityTags? = nil,
-        cachedOnly: Bool = false
+        cachedOnly: Bool = false,
+        episode: EpisodeTarget? = nil
     ) -> NuvioStream? {
         rankedStreams(
             from: streams,
@@ -3449,7 +3606,8 @@ enum SmartPlaybackSelector {
             shouldMatchSubtitles: shouldMatchSubtitles,
             includeDebrid: includeDebrid,
             preferredTags: preferredTags,
-            cachedOnly: cachedOnly
+            cachedOnly: cachedOnly,
+            episode: episode
         ).first
     }
 
@@ -3461,7 +3619,8 @@ enum SmartPlaybackSelector {
         shouldMatchSubtitles: Bool,
         includeDebrid: Bool = false,
         preferredTags: StreamQualityTags? = nil,
-        cachedOnly: Bool = false
+        cachedOnly: Bool = false,
+        episode: EpisodeTarget? = nil
     ) -> [NuvioStream] {
         let playable = streams.enumerated().compactMap { index, stream -> (index: Int, stream: NuvioStream)? in
             guard stream.unavailabilityReason == nil else { return nil }
@@ -3520,7 +3679,8 @@ enum SmartPlaybackSelector {
             } else {
                 hardwareBoost = 0
             }
-            return (index, stream, subtitleScore + qualityScore + featureScore + resumeScore + cachedBoost + lowQualityPenalty + hardwareBoost)
+            let episodeBoost = episodeRankingBoost(for: stream, target: episode)
+            return (index, stream, subtitleScore + qualityScore + featureScore + resumeScore + cachedBoost + lowQualityPenalty + hardwareBoost + episodeBoost)
         }
 
         return ranked.sorted { lhs, rhs in

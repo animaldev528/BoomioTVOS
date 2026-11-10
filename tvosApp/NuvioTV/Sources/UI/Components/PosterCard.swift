@@ -3558,6 +3558,17 @@ struct TitleActionsMenuContent: View {
             }
 
             Button {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) {
+                    TitleActionBus.shared.openMoreLikeThis(for: meta)
+                }
+            } label: {
+                Label(
+                    L10n.string("action_more_like_this", fallback: "More like this"),
+                    systemImage: "sparkles"
+                )
+            }
+
+            Button {
                 scheduleWatchedToggle(desiredIsWatched: !isItemWatched)
             } label: {
                 Label(
@@ -3568,6 +3579,44 @@ struct TitleActionsMenuContent: View {
                 )
             }
             .disabled(isLibraryWatchedResolutionPending)
+
+            let isLiked = TitleFeedbackStore.isLiked(meta)
+            Button {
+                TitleFeedbackStore.setLiked(!isLiked, for: meta)
+            } label: {
+                Label(
+                    isLiked
+                        ? L10n.string("action_liked", fallback: "Liked")
+                        : L10n.string("action_like", fallback: "Like"),
+                    systemImage: isLiked ? "hand.thumbsup.fill" : "hand.thumbsup"
+                )
+            }
+
+            // Local for now: the taste engine has no feedback endpoint, so the
+            // signal is recorded on the device and the row stops drawing it.
+            Button {
+                TitleFeedbackStore.setDismissed(true, for: meta)
+            } label: {
+                Label(
+                    L10n.string("action_not_interested", fallback: "Not interested"),
+                    systemImage: "eye.slash"
+                )
+            }
+
+            // Which public Trakt lists contain THIS title, drawn as rows of what
+            // they hold — the Android menu's "Public Lists". The URL picker is
+            // still reachable from that screen, for a list the lookup never
+            // names.
+            Button {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) {
+                    TitleActionBus.shared.openPublicLists(for: meta)
+                }
+            } label: {
+                Label(
+                    L10n.string("action_public_lists", fallback: "Public Lists"),
+                    systemImage: "list.bullet.rectangle"
+                )
+            }
 
             if let onRefreshCatalog {
                 Button {

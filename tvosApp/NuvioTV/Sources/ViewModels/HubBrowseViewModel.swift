@@ -47,10 +47,26 @@ final class HubBrowseViewModel: ObservableObject {
         loadCompleted = false
         loadTask = Task { [weak self] in
             guard let self else { return }
-            let sources = await self.repository.hubCatalogSources(kind: self.kind)
+            let plan = await self.repository.hubCatalogSources(kind: self.kind)
             guard self.generation == expected, !Task.isCancelled else { return }
             var loaded: [TVHubSection] = []
-            for source in sources {
+            // The provider ribbons are the hub's top band, so they load — and
+            // publish — before any regular section: the first screenful should
+            // be the spotlight, not a list that fills in underneath it.
+            for group in plan.spotlights {
+                guard self.generation == expected, !Task.isCancelled else { return }
+                let rows = await self.repository.hubSpotlightRows(for: group)
+                guard self.generation == expected, !Task.isCancelled else { return }
+                guard !rows.isEmpty else { continue }
+                loaded.append(TVHubSection(
+                    id: group.id,
+                    title: group.title,
+                    addonName: group.sources.first?.addonName ?? "",
+                    rows: rows
+                ))
+                self.sections = loaded
+            }
+            for source in plan.sections {
                 guard self.generation == expected, !Task.isCancelled else { return }
                 if let section = await self.repository.hubSection(for: source) {
                     loaded.append(section)
@@ -63,6 +79,40 @@ final class HubBrowseViewModel: ObservableObject {
             self.loadCompleted = true
             self.loadTask = nil
         }
+    }
+
+    /// Re-reads every loaded row through the local "Not interested" filter, so
+    /// a dismissal removes its tile from the row it was dismissed from instead
+    /// of waiting for the next hub activation to rebuild the section.
+    func applyFeedbackFilter() {
+        var filtered: [TVHubSection] = []
+        filtered.reserveCapacity(sections.count)
+        for section in sections {
+            var rows: [TVHubSectionRow] = []
+            for row in section.rows {
+                let visible = TitleFeedbackStore.visible(row.items)
+                guard !visible.isEmpty else { continue }
+                if visible.count == row.items.count {
+                    rows.append(row)
+                } else {
+                    rows.append(TVHubSectionRow(
+                        id: row.id,
+                        title: row.title,
+                        catalogId: row.catalogId,
+                        items: visible,
+                        addonName: row.addonName
+                    ))
+                }
+            }
+            guard !rows.isEmpty else { continue }
+            filtered.append(TVHubSection(
+                id: section.id,
+                title: section.title,
+                addonName: section.addonName,
+                rows: rows
+            ))
+        }
+        sections = filtered
     }
 
     /// Drops the visible rows and abandons the in-flight load. The next

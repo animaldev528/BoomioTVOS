@@ -5516,41 +5516,53 @@ private struct IntegrationSettingsView: View {
                     fallback: "Watchlist, progress, history, comments, and recommendations"
                 )
             ) {
-                SettingsTextFieldRow(
-                    title: "Trakt Client ID",
-                    subtitle: "Create an API app at trakt.tv/oauth/applications",
-                    placeholder: L10n.string("debrid_not_set", fallback: "Not set"),
-                    text: $traktClientIDDraft,
-                    onCommit: {
-                        commitTraktRedirectURI()
-                        traktClientID = traktClientIDDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                        traktViewModel.credentialsDidChange()
-                    }
-                )
+                // A build that carries Boomio's own Trakt app (the same one the
+                // Android client bakes in) needs no credentials typed here at
+                // all — the card below signs in with a six-character code at
+                // trakt.tv/activate. The manual rows stay for builds without a
+                // bundled app, i.e. anyone building from source locally.
+                if TraktConfig.hasBundledApp {
+                    SettingsInfoRow(
+                        title: "Trakt app",
+                        value: "Built into this version — no keys needed"
+                    )
+                } else {
+                    SettingsTextFieldRow(
+                        title: "Trakt Client ID",
+                        subtitle: "Create an API app at trakt.tv/oauth/applications",
+                        placeholder: L10n.string("debrid_not_set", fallback: "Not set"),
+                        text: $traktClientIDDraft,
+                        onCommit: {
+                            commitTraktRedirectURI()
+                            traktClientID = traktClientIDDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                            traktViewModel.credentialsDidChange()
+                        }
+                    )
 
-                SettingsTextFieldRow(
-                    title: "Trakt Client Secret (optional)",
-                    subtitle: L10n.string(
-                        "tvos_settings_trakt_secret_optional",
-                        fallback: "Leave blank for new (PKCE) Trakt apps — only legacy apps still use a secret"
-                    ),
-                    placeholder: L10n.string("debrid_not_set", fallback: "Not set"),
-                    text: $traktClientSecretDraft,
-                    isSecure: true,
-                    onCommit: {
-                        traktClientSecret = traktClientSecretDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                        traktViewModel.credentialsDidChange()
-                    }
-                )
+                    SettingsTextFieldRow(
+                        title: "Trakt Client Secret (optional)",
+                        subtitle: L10n.string(
+                            "tvos_settings_trakt_secret_optional",
+                            fallback: "Leave blank for new (PKCE) Trakt apps — only legacy apps still use a secret"
+                        ),
+                        placeholder: L10n.string("debrid_not_set", fallback: "Not set"),
+                        text: $traktClientSecretDraft,
+                        isSecure: true,
+                        onCommit: {
+                            traktClientSecret = traktClientSecretDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                            traktViewModel.credentialsDidChange()
+                        }
+                    )
 
-                SettingsTextFieldRow(
-                    title: "Trakt Redirect URI",
-                    subtitle: "Must exactly match this app's registered Trakt redirect URI; used when refreshing tokens",
-                    placeholder: TraktConfig.defaultRedirectURI,
-                    text: $traktRedirectURIDraft,
-                    fieldWidth: 460,
-                    onCommit: commitTraktRedirectURI
-                )
+                    SettingsTextFieldRow(
+                        title: "Trakt Redirect URI",
+                        subtitle: "Must exactly match this app's registered Trakt redirect URI; used when refreshing tokens",
+                        placeholder: TraktConfig.defaultRedirectURI,
+                        text: $traktRedirectURIDraft,
+                        fieldWidth: 460,
+                        onCommit: commitTraktRedirectURI
+                    )
+                }
 
                 TraktConnectionSettingsCard(
                     viewModel: traktViewModel,
@@ -6008,7 +6020,10 @@ private struct IntegrationSettingsView: View {
 
     private var traktCredentialsReady: Bool {
         // Trakt deprecated the client secret (PKCE-only apps): a Client ID is enough.
-        !traktClientIDDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        // A build carrying Boomio's own Trakt app has one already, so Connect is
+        // live with nothing typed — the Android client's behaviour.
+        TraktConfig.hasBundledApp
+            || !traktClientIDDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var simklCredentialsReady: Bool {
@@ -12217,6 +12232,12 @@ private struct AboutSettingsView: View {
         VStack(alignment: .leading, spacing: 22) {
             SettingsGroup(title: L10n.string("tvos_settings_nuviotv", fallback: "NuvioTV"), subtitle: L10n.string("tvos_settings_build_and_runtime_information", fallback: "Build and runtime information")) {
                 SettingsInfoRow(title: L10n.string("tvos_settings_app_version", fallback: "App Version"), value: appVersion)
+                if let buildStamp {
+                    SettingsInfoRow(
+                        title: L10n.string("tvos_settings_build_stamp", fallback: "Build"),
+                        value: buildStamp
+                    )
+                }
                 SettingsInfoRow(
                     title: L10n.string("release_update_latest_version", fallback: "Latest Version"),
                     value: releaseUpdateService.latestStatus
@@ -12369,6 +12390,17 @@ private struct AboutSettingsView: View {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
         return "\(version) (\(build))"
+    }
+
+    /// The CI run that produced this IPA, injected by `scripts/build-ipa.sh`.
+    /// Shown short — tag plus the first seven commit characters — because the
+    /// sideloaded bundle id and version are identical from build to build.
+    private var buildStamp: String? {
+        guard let raw = Bundle.main.object(forInfoDictionaryKey: "BoomioBuildStamp") as? String,
+              !raw.isEmpty else { return nil }
+        guard let dash = raw.lastIndex(of: "-") else { return raw }
+        let sha = raw[raw.index(after: dash)...]
+        return "\(raw[..<dash])-\(sha.prefix(7))"
     }
 }
 
@@ -17132,7 +17164,9 @@ private struct SettingsSearchStyleField: View {
 /// Settings-style chip (same glass language as category pills / FilterChip).
 /// Uses a flat fill + focus outline instead of nested `loginGlassCapsule`
 /// so chips do not read as a second glass box inside the editor panel.
-private struct CollectionChipButton: View {
+/// Internal, not file-private: the tile long-press menu's public-list sheet
+/// uses the same chips as the collection editor.
+struct CollectionChipButton: View {
     let title: String
     let isSelected: Bool
     let action: () -> Void
@@ -18539,7 +18573,9 @@ private struct CollectionTmdbSourceSheet: View {
 }
 
 /// Minimal Trakt list form — writes Android-compatible `provider: trakt` JSON.
-private struct CollectionTraktSourceSheet: View {
+/// Internal, not file-private: the tile long-press menu's "Add a public list
+/// to Home" reuses this picker instead of growing a second implementation.
+struct CollectionTraktSourceSheet: View {
     let accentColor: Color
     var initialSource: [String: Any]? = nil
     let onSave: ([String: Any]) -> Void
@@ -18641,7 +18677,8 @@ private struct CollectionTraktSourceSheet: View {
 }
 
 /// Minimal MDBList form — writes Android-compatible `provider: mdblist` JSON.
-private struct CollectionMdbListSourceSheet: View {
+/// Internal, not file-private: see `CollectionTraktSourceSheet`.
+struct CollectionMdbListSourceSheet: View {
     let accentColor: Color
     var initialSource: [String: Any]? = nil
     let onSave: ([String: Any]) -> Void

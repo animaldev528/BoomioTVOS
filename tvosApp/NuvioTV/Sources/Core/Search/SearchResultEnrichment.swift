@@ -120,7 +120,9 @@ enum SearchResultEnrichment {
                 addonName: section.addonName,
                 catalogId: section.catalogId,
                 type: section.type,
-                results: results
+                results: results,
+                addonId: section.addonId,
+                searchTerm: section.searchTerm
             ))
         }
         return enriched

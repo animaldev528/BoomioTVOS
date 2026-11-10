@@ -80,6 +80,14 @@ struct CatalogSearchSection: Identifiable {
     let catalogId: String
     let type: String
     let results: [NuvioMeta]
+    /// The add-on that answered, so the row can be pinned to Home as a source.
+    /// Nil for the built-in Cinemeta and for the flat compatibility paths.
+    var addonId: String? = nil
+    /// The query this row answered. A pinned row keeps it and re-asks the same
+    /// catalog on every Home load, which is what makes an "episode results"
+    /// row possible at all: the add-on's episode search is a query, not a
+    /// catalog with a fixed list.
+    var searchTerm: String? = nil
 }
 
 struct CatalogSearchOutcome {
@@ -189,6 +197,13 @@ protocol CatalogRepository {
     /// Search while preserving whether every configured source completed.
     func searchWithOutcome(query: String) async throws -> CatalogSearchOutcome
 
+    /// The slow lane of a search: catalogs whose answers take many seconds
+    /// (the AI episode/title search catalogs run 4–21 s). They are asked after
+    /// the fast fan-out and merged into the grid when they land, so they never
+    /// delay or invalidate the quick sources. Repositories without slow
+    /// sources answer empty and complete.
+    func searchSlowOutcome(query: String) async -> CatalogSearchOutcome
+
     /// Browse catalog with pagination and filters
     func browseCatalog(
         contentType: String,
@@ -215,6 +230,19 @@ protocol CatalogRepository {
         catalogId: String,
         skip: Int,
         genre: String?
+    ) async throws -> CatalogPage
+
+    /// The same browse with the catalog's `search` extra supplied. A pinned
+    /// "episode results" row is a saved query, not a fixed list: Home re-asks
+    /// the add-on's search catalog with this term on every load. Repositories
+    /// whose catalogs take no search extra ignore it.
+    func browseCatalog(
+        addonId: String?,
+        contentType: String,
+        catalogId: String,
+        skip: Int,
+        genre: String?,
+        search: String?
     ) async throws -> CatalogPage
 
     /// Get available genres for content type
@@ -255,6 +283,10 @@ extension CatalogRepository {
 
     func searchWithOutcome(query: String) async throws -> CatalogSearchOutcome {
         CatalogSearchOutcome(results: try await search(query: query), isComplete: true)
+    }
+
+    func searchSlowOutcome(query: String) async -> CatalogSearchOutcome {
+        CatalogSearchOutcome(results: [], isComplete: true)
     }
 
     func getDiscoverSources() async -> [DiscoverCatalogOption] { [] }
@@ -299,6 +331,23 @@ extension CatalogRepository {
         genre: String?
     ) async throws -> CatalogPage {
         try await browseCatalog(
+            contentType: contentType,
+            catalogId: catalogId,
+            skip: skip,
+            genre: genre
+        )
+    }
+
+    func browseCatalog(
+        addonId: String?,
+        contentType: String,
+        catalogId: String,
+        skip: Int,
+        genre: String?,
+        search: String?
+    ) async throws -> CatalogPage {
+        try await browseCatalog(
+            addonId: addonId,
             contentType: contentType,
             catalogId: catalogId,
             skip: skip,
@@ -690,6 +739,32 @@ final class CinemetaCatalogRepository: CatalogRepository {
             Self.cachedMetaById[meta.id] = meta
             Self.cachedFullMetaIds.insert(meta.id)
         }
+    }
+
+    /// Stores a metadata answer known to be incomplete — today, a series record
+    /// with no episode list — without marking it full. `isCachedFullMetadata`
+    /// stays false, so the next visit re-fetches instead of serving the hollow
+    /// record (and its Play-only details screen) for the whole session.
+    func cachePartialMetadata(_ meta: NuvioMeta, requestedID: String? = nil, context: String? = nil) {
+        let context = context ?? Self.metadataCacheContext
+        guard !Task.isCancelled else { return }
+        Self.metadataCacheQueue.sync(flags: .barrier) {
+            guard Self.prepareMetadataCache(for: context) else { return }
+            if let requestedID {
+                Self.cachedMetaById[requestedID] = meta
+            }
+            Self.cachedMetaById[meta.id] = meta
+        }
+    }
+
+    /// True when a record claiming to be a series carries no episode list, which
+    /// leaves the details screen with nothing but a Play button.
+    static func lacksEpisodeGuide(_ meta: NuvioMeta, for requestedType: String) -> Bool {
+        let claimsSeries = meta.isSeries
+            || isSeriesType(meta.type)
+            || isSeriesType(requestedType)
+        guard claimsSeries else { return false }
+        return (meta.videos ?? []).isEmpty
     }
 
     private static func hasCanonicalIMDbStreamIdentity(_ meta: NuvioMeta) -> Bool {
@@ -1453,6 +1528,7 @@ final class CinemetaCatalogRepository: CatalogRepository {
             }
         }
 
+        var hollowAddonResult: NuvioMeta?
         if !addonURLs.isEmpty {
             let addonResult: NuvioMeta? = await withTaskGroup(of: NuvioMeta?.self) { group in
                 for (metaURL, candidateType) in addonURLs {
@@ -1468,16 +1544,28 @@ final class CinemetaCatalogRepository: CatalogRepository {
                         }
                     }
                 }
+                // A series record with no episode list cannot drive the details
+                // screen — it renders as a lone "Play" button. An add-on can
+                // answer a series id with exactly that hollow shape (bsf's
+                // /meta returns no `videos`), and the first answer used to win
+                // the race, which is why a search hit for an episode opened a
+                // poster with nothing to pick. Prefer an answer that carries
+                // the guide; hold the first hollow one as a last resort.
+                var held: NuvioMeta?
                 for await result in group {
-                    if let result {
-                        return result
-                    }
+                    guard let result else { continue }
+                    if !Self.lacksEpisodeGuide(result, for: metaType) { return result }
+                    if held == nil { held = result }
                 }
-                return nil
+                return held
             }
             if let addonResult {
-                cacheMetadata(addonResult, requestedID: id, context: metadataContext)
-                return addonResult
+                if Self.lacksEpisodeGuide(addonResult, for: metaType) {
+                    hollowAddonResult = addonResult
+                } else {
+                    cacheMetadata(addonResult, requestedID: id, context: metadataContext)
+                    return addonResult
+                }
             }
         }
 
@@ -1524,6 +1612,16 @@ final class CinemetaCatalogRepository: CatalogRepository {
                     lastError = error
                 }
             }
+        }
+
+        // The add-on answered with a hollow series record and Cinemeta could not
+        // supply an episode list either (disabled, or it simply has none). Show
+        // the thin record rather than nothing — but keep it out of the "full
+        // metadata" set, so opening the title again retries instead of serving
+        // the Play-only screen for the rest of the session.
+        if let hollowAddonResult {
+            cachePartialMetadata(hollowAddonResult, requestedID: id, context: metadataContext)
+            return hollowAddonResult
         }
 
         // If no /meta endpoint returned a response, check if the item was already cached from a catalog
@@ -2122,9 +2220,18 @@ final class CinemetaCatalogRepository: CatalogRepository {
             /// Row label for this source ("AI Episodes"), falling back to the
             /// add-on name when the catalog declares none.
             let displayName: String
+            /// The manifest id of the add-on serving the catalog, so the row can
+            /// later be pinned to Home as an add-on source. Nil for Cinemeta.
+            var addonId: String? = nil
         }
 
         var targets: [SearchTarget] = []
+        /// Catalogs whose answers take many seconds. They are deliberately left
+        /// out of the fast fan-out below: a 5 s deadline is shorter than their
+        /// real latency, so including them only ever produces a timeout and a
+        /// row that flickers in and out between queries. `searchSlowOutcome`
+        /// asks them with a deadline that fits, and the grid merges the answer.
+        var slowTargets: [SearchTarget] = []
         let builtInCinemetaManifestURL = baseURL.appendingPathComponent("manifest.json")
         let candidateURLs = Self.configuredStreamAddonManifestURLs.filter {
             $0.absoluteString.caseInsensitiveCompare(builtInCinemetaManifestURL.absoluteString) != .orderedSame
@@ -2172,23 +2279,32 @@ final class CinemetaCatalogRepository: CatalogRepository {
                 advertisedCatalogCount += catalogs.count
                 for catalog in catalogs where catalog.supportsSearch {
                     searchCapableCatalogCount += 1
-                    targets.append(
-                        SearchTarget(
-                            addonName: addonName,
-                            baseURL: sourceBaseURL,
-                            type: catalog.type,
-                            catalogId: catalog.id,
-                            isAddon: true,
-                            displayName: catalog.name?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-                                ?? addonName
-                        )
+                    let target = SearchTarget(
+                        addonName: addonName,
+                        baseURL: sourceBaseURL,
+                        type: catalog.type,
+                        catalogId: catalog.id,
+                        isAddon: true,
+                        displayName: catalog.name?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                            ?? addonName,
+                        addonId: manifest.id
                     )
+                    if Self.isSlowSearchCatalog(id: catalog.id) {
+                        slowTargets.append(target)
+                    } else {
+                        targets.append(target)
+                    }
                 }
             }
         }
 
         // Do not silently re-enable Cinemeta when the user explicitly disabled it.
         guard !targets.isEmpty else {
+            if !slowTargets.isEmpty {
+                // Only the slow catalogs are configured: their answer is the
+                // slow lane's to bring, so this is not a finished search.
+                return CatalogSearchOutcome(results: [], isComplete: false)
+            }
             let isComplete = missingManifestCount == 0
             let reason: CatalogSearchReason
             if missingManifestCount > 0 {
@@ -2306,7 +2422,9 @@ final class CinemetaCatalogRepository: CatalogRepository {
                 addonName: target.addonName,
                 catalogId: target.catalogId,
                 type: target.type,
-                results: sourceResults
+                results: sourceResults,
+                addonId: target.addonId,
+                searchTerm: trimmed
             ))
         }
 
@@ -2329,6 +2447,119 @@ final class CinemetaCatalogRepository: CatalogRepository {
             sections: sections,
             isComplete: isComplete
         )
+    }
+
+    /// The slow lane: the AI search catalogs, asked with the deadline their
+    /// real latency needs. bsf answers `/ai-search*` in 4–21 s (measured), so
+    /// the fast fan-out's 5 s cap could only ever drop them — which is what
+    /// made episode search work intermittently. This lane runs beside the fast
+    /// one and the grid merges the answer, so a slow lookup never delays a
+    /// quick source and never reads as "search failed".
+    func searchSlowOutcome(query: String) async -> CatalogSearchOutcome {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return CatalogSearchOutcome(results: [], isComplete: true) }
+        let manifestURLs = Self.configuredStreamAddonManifestURLs
+        guard !manifestURLs.isEmpty else { return CatalogSearchOutcome(results: [], isComplete: true) }
+        let manifests = await loadManifestsConcurrently(urls: manifestURLs)
+        let metadataContext = Self.metadataCacheContext
+
+        var targets: [(addonName: String, baseURL: URL, type: String, catalogId: String, displayName: String, addonId: String)] = []
+        for manifestURL in manifestURLs {
+            guard let manifest = manifests[manifestURL], manifest.id != Self.cinemetaAddonId else { continue }
+            let base = manifestURL.lastPathComponent.lowercased() == "manifest.json"
+                ? manifestURL.deletingLastPathComponent()
+                : manifestURL
+            let addonName = Self.streamAddonDisplayName(for: manifestURL, manifestName: manifest.displayName)
+            for catalog in manifest.catalogs ?? [] where catalog.supportsSearch {
+                guard Self.isSlowSearchCatalog(id: catalog.id) else { continue }
+                targets.append((
+                    addonName: addonName,
+                    baseURL: base,
+                    type: catalog.type,
+                    catalogId: catalog.id,
+                    displayName: catalog.name?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                        ?? addonName,
+                    addonId: manifest.id
+                ))
+            }
+        }
+        guard !targets.isEmpty else { return CatalogSearchOutcome(results: [], isComplete: true) }
+
+        typealias SlowResult = (index: Int, items: [NuvioMeta], succeeded: Bool)
+        let results = await withTaskGroup(of: SlowResult.self, returning: [SlowResult].self) { group in
+            for (index, target) in targets.enumerated() {
+                group.addTask {
+                    guard !Task.isCancelled else { return (index, [], false) }
+                    do {
+                        let items: [NuvioMeta] = try await withThrowingTaskGroup(of: [NuvioMeta].self) { fetchGroup in
+                            fetchGroup.addTask {
+                                try await self.fetchCatalog(
+                                    sourceBaseURL: target.baseURL,
+                                    type: target.type,
+                                    catalogId: target.catalogId,
+                                    skip: nil,
+                                    search: trimmed,
+                                    genre: nil
+                                )
+                            }
+                            fetchGroup.addTask {
+                                try await Task.sleep(nanoseconds: UInt64(Self.slowSearchDeadline * 1_000_000_000))
+                                try Task.checkCancellation()
+                                throw URLError(.timedOut)
+                            }
+                            guard let first = try await fetchGroup.next() else { return [] }
+                            fetchGroup.cancelAll()
+                            return first
+                        }
+                        return (index, items.map { $0.withIsFromAddon(true) }, true)
+                    } catch {
+                        return (index, [], false)
+                    }
+                }
+            }
+            var completed: [SlowResult] = []
+            for await result in group {
+                completed.append(result)
+            }
+            return completed.sorted { $0.index < $1.index }
+        }
+        guard !Task.isCancelled else { return CatalogSearchOutcome(results: [], isComplete: false) }
+
+        var sections: [CatalogSearchSection] = []
+        var flat: [NuvioMeta] = []
+        for result in results where result.succeeded && !result.items.isEmpty {
+            let target = targets[result.index]
+            let deduplicated = Self.deduplicatedSearchResults(result.items)
+            guard !deduplicated.isEmpty else { continue }
+            flat.append(contentsOf: deduplicated)
+            sections.append(CatalogSearchSection(
+                id: "\(target.catalogId)|\(target.addonName)",
+                title: target.displayName,
+                addonName: target.addonName,
+                catalogId: target.catalogId,
+                type: target.type,
+                results: deduplicated,
+                addonId: target.addonId,
+                searchTerm: trimmed
+            ))
+        }
+        cacheMetadata(flat, context: metadataContext)
+        return CatalogSearchOutcome(
+            results: Self.deduplicatedSearchResults(flat),
+            sections: sections,
+            isComplete: true
+        )
+    }
+
+    /// How long the slow lane waits for one catalog. bsf's AI search tops out
+    /// around 21 s; the margin covers a cold model call without hanging the
+    /// grid forever — the row simply does not appear when the call loses.
+    static let slowSearchDeadline: TimeInterval = 30
+
+    /// A search catalog whose answer is a multi-second model lookup rather than
+    /// a database query. Their ids say so (`ai-search`, `ai-search-episodes`).
+    private static func isSlowSearchCatalog(id: String) -> Bool {
+        id.lowercased().contains("ai-search")
     }
 
     /// Search sources can identify the same title differently (for example,
@@ -2622,6 +2853,24 @@ final class CinemetaCatalogRepository: CatalogRepository {
         skip: Int,
         genre: String?
     ) async throws -> CatalogPage {
+        try await browseCatalog(
+            addonId: addonId,
+            contentType: contentType,
+            catalogId: catalogId,
+            skip: skip,
+            genre: genre,
+            search: nil
+        )
+    }
+
+    func browseCatalog(
+        addonId: String?,
+        contentType: String,
+        catalogId: String,
+        skip: Int,
+        genre: String?,
+        search: String?
+    ) async throws -> CatalogPage {
         let metadataContext = Self.metadataCacheContext
         if addonId == "simkl" || (addonId == nil && catalogId == "plantowatch") {
             let allItems = await SimklLibraryService.fetchPlanToWatchItems(
@@ -2665,7 +2914,7 @@ final class CinemetaCatalogRepository: CatalogRepository {
             type: contentType,
             catalogId: catalogId,
             skip: skip == 0 ? nil : skip,
-            search: nil,
+            search: search?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
             genre: genre
         )
         let items: [NuvioMeta]
@@ -3132,7 +3381,10 @@ final class CinemetaCatalogRepository: CatalogRepository {
         return response.metas.map { $0.toMeta(fallbackType: type) }
     }
 
-    private func fetch<T: Decodable>(_ url: URL) async throws -> T {
+    /// Not `private`: the taste add-on's more-like-this wall goes out through
+    /// this same session (client certificate, 403 re-presentation), from
+    /// `TasteMoreLikeThisService`.
+    func fetch<T: Decodable>(_ url: URL) async throws -> T {
         var request = URLRequest(url: url)
         request.timeoutInterval = 8
         request.setValue("Mozilla/5.0 (AppleTV; tvOS 18.0) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
@@ -4075,6 +4327,11 @@ struct TVHubCatalogSource: Identifiable {
     let name: String
     /// A required genre is satisfied with the catalog's first declared option.
     let genre: String?
+    /// The `genre` extra's declared options, when the catalog offers one.
+    /// A streaming service's catalog (`catalog.nuvio.tv`'s "Disney+ Movies")
+    /// declares the whole genre list on a single catalog, which is what lets a
+    /// provider tab be more than one row. Empty when the catalog takes none.
+    var genreOptions: [String] = []
 
     var id: String { "\(addonId)|\(type)|\(catalogId)" }
     var isHub: Bool { catalogId.lowercased().hasPrefix("hub-") }
@@ -4097,18 +4354,37 @@ struct TVHubSection: Identifiable {
     var rows: [TVHubSectionRow]
 }
 
+/// One provider's ribbons at the top of a hub — "Disney+ Movies" followed by
+/// "Popular on Disney+", "New on Disney+". This is the Android hub's spotlight
+/// band: the catalogs that Home already draws, regrouped under the provider
+/// they name, and drawn before every regular section.
+struct TVHubSpotlightGroup: Identifiable {
+    let id: String
+    let title: String
+    var sources: [TVHubCatalogSource]
+}
+
 extension CinemetaCatalogRepository {
     /// The catalogs a hub browses, in the order the Android client draws them
     /// (`HubBrowseViewModel.kt`): `hub-*` sections by category rank, then the
     /// manifest's own catalogs of that kind so nothing previously reachable
-    /// disappears. Search-only and featured/Home catalogs stay on Home.
-    func hubCatalogSources(kind: TVHubKind) async -> [TVHubCatalogSource] {
+    /// disappears. Search-only catalogs stay on Home.
+    ///
+    /// The provider ribbons ("Popular on Disney+", "New on Netflix") come back
+    /// separately as `spotlights`, grouped under the provider they name: the
+    /// hub draws those first, which is Android's top band. Everything else
+    /// that is Home-only stays Home-only.
+    func hubCatalogSources(
+        kind: TVHubKind
+    ) async -> (sections: [TVHubCatalogSource], spotlights: [TVHubSpotlightGroup]) {
         let manifestURLs = Self.configuredStreamAddonManifestURLs
-        guard !manifestURLs.isEmpty else { return [] }
+        guard !manifestURLs.isEmpty else { return ([], []) }
         let manifests = await loadManifestsConcurrently(urls: manifestURLs)
         let deleted = TVHomeCatalogOrder.deletedCatalogKeys()
         var hubSources: [TVHubCatalogSource] = []
         var plainSources: [TVHubCatalogSource] = []
+        var spotlightGroups: [TVHubSpotlightGroup] = []
+        var spotlightIndex: [String: Int] = [:]
 
         for manifestURL in manifestURLs {
             guard let manifest = manifests[manifestURL],
@@ -4120,8 +4396,6 @@ extension CinemetaCatalogRepository {
             for catalog in manifest.catalogs ?? [] {
                 guard Self.hubCatalog(catalog, matches: kind) else { continue }
                 guard !Self.isSearchOnlyCatalog(catalog) else { continue }
-                // Featured/curated catalogs stay on Home, not the hubs.
-                guard !Self.isFeaturedHomeCatalog(catalog) else { continue }
                 if catalog.requiresGenre, catalog.firstGenreOption == nil { continue }
                 let settingsKey = TVHomeCatalogOrder.catalogSettingsKey(
                     addonId: manifest.id,
@@ -4138,9 +4412,36 @@ extension CinemetaCatalogRepository {
                     catalogId: catalog.id,
                     name: catalog.name?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
                         ?? catalog.id,
-                    genre: catalog.requiresGenre ? catalog.firstGenreOption : nil
+                    genre: catalog.requiresGenre ? catalog.firstGenreOption : nil,
+                    genreOptions: catalog.requiresGenre
+                        ? []
+                        : (catalog.extra?.first { $0.name.caseInsensitiveCompare("genre") == .orderedSame }?.options ?? [])
                 )
-                if source.isHub { hubSources.append(source) } else { plainSources.append(source) }
+                if Self.isSpotlightCatalog(catalog) {
+                    let provider = Self.spotlightProvider(forName: source.name, fallback: addonName)
+                    let key = provider.lowercased()
+                    if let index = spotlightIndex[key] {
+                        // Two or three ribbons per provider, never the whole
+                        // Home page repeated at the top of a hub.
+                        if spotlightGroups[index].sources.count < Self.spotlightRowsPerProvider {
+                            spotlightGroups[index].sources.append(source)
+                        }
+                    } else if spotlightGroups.count < Self.spotlightProvidersLimit {
+                        spotlightIndex[key] = spotlightGroups.count
+                        spotlightGroups.append(TVHubSpotlightGroup(
+                            id: "spotlight-\(key)",
+                            title: "\(provider) \(Self.spotlightNoun(kind: kind))",
+                            sources: [source]
+                        ))
+                    }
+                } else if Self.isFeaturedHomeCatalog(catalog) {
+                    // Featured/curated catalogs stay on Home, not the hubs.
+                    continue
+                } else if source.isHub {
+                    hubSources.append(source)
+                } else {
+                    plainSources.append(source)
+                }
             }
         }
 
@@ -4153,7 +4454,48 @@ extension CinemetaCatalogRepository {
                 return l != r ? l < r : lhs.offset < rhs.offset
             }
             .map(\.element)
-        return hubs + plainSources
+        // One band per provider. The board's `hub-*` ribbon is the richest:
+        // its drill-down names the service's own rows ("New on Disney+",
+        // "Trending on Disney+", "Comedies on Disney+", ...). The catalog
+        // add-on's plain provider catalog is the fallback when no ribbon
+        // exists, drawn as its own list plus a row per genre. Both are
+        // commonly installed for the same service, and the same ribbon is
+        // often installed twice (the board and the per-row add-on), so keep
+        // exactly one band per provider.
+        let hubProviderKeys = Set(hubs.compactMap { source -> String? in
+            guard Self.providerName(inCatalogName: source.name) != nil else { return nil }
+            return Self.providerKey(for: source)
+        })
+        let richProviders = Set((hubs + plainSources).compactMap { source -> String? in
+            guard Self.providerName(inCatalogName: source.name) != nil,
+                  source.genreOptions.count >= 4 else { return nil }
+            return Self.providerKey(for: source)
+        })
+        var keptRich = Set<String>()
+        var keptBands = Set<String>()
+        func keep(_ source: TVHubCatalogSource) -> Bool {
+            guard Self.providerName(inCatalogName: source.name) != nil else { return true }
+            let key = Self.providerKey(for: source)
+            if hubProviderKeys.contains(key) {
+                // The ribbon covers the service; anything else for it is a
+                // duplicate or a thinner second copy.
+                guard source.isHub || source.catalogId.lowercased().hasPrefix("rec-") else { return false }
+                return keptRich.insert(key).inserted
+            }
+            if richProviders.contains(key) {
+                guard source.genreOptions.count >= 4 else { return true }
+                return keptRich.insert(key).inserted
+            }
+            return keptBands.insert(key).inserted
+        }
+        let filtered = (hubs + plainSources).filter(keep)
+        return (filtered, spotlightGroups)
+    }
+
+    /// "<provider>|<type>" — the identity of one service's band within a hub.
+    private static func providerKey(for source: TVHubCatalogSource) -> String {
+        let provider = providerName(inCatalogName: source.name)?.lowercased() ?? source.name.lowercased()
+        return "\(provider)|\(source.type.lowercased())"
     }
 
     /// Loads one hub section. A `hub-*` catalog is reached through its
@@ -4162,8 +4504,24 @@ extension CinemetaCatalogRepository {
     /// produced no row is dropped, never shipped blank.
     func hubSection(for source: TVHubCatalogSource) async -> TVHubSection? {
         let rows: [TVHubSectionRow]
-        if source.isHub {
+        // A `hub-*` catalog is the server's merged provider row; a `rec-*`
+        // catalog is the same thing under this board's own naming. Both carry
+        // `sub_rows`, and the server exposes those as `rec-<rowId>-drilldown`.
+        // Android asks every section for its drilldown
+        // (`HubBrowseViewModel.loadHubSectionRows`) and so draws a dozen rows
+        // per tab; asking only for `hub-*` is why the provider tabs here drew
+        // one row each. A catalog the server has no drilldown for still falls
+        // back to its own grid as a single row (see `hubDrillRows`).
+        if source.isHub || source.catalogId.lowercased().hasPrefix("rec-") {
             rows = await hubDrillRows(for: source)
+        } else if let provider = Self.providerName(inCatalogName: source.name),
+                  source.genreOptions.count >= 4 {
+            // A streaming service's catalog declares a `genre` extra, and that
+            // is the whole difference between "Disney+ Movies" as one row and
+            // the service's slate: the catalog's own list, then one row per
+            // genre it offers. Without this expansion every provider tab on
+            // this board is a single row, which is what makes them look empty.
+            rows = await hubProviderRows(for: source, provider: provider)
         } else if let items = await hubItems(
             source, catalogId: source.catalogId, type: source.type, genre: source.genre
         ), !items.isEmpty {
@@ -4185,24 +4543,70 @@ extension CinemetaCatalogRepository {
         if !allItems.isEmpty {
             cacheMetadata(allItems, context: Self.metadataCacheContext)
         }
+        // "Not interested" is recorded on the device; a row it empties is
+        // dropped like any other empty row.
+        let visibleRows = rows.compactMap { row -> TVHubSectionRow? in
+            let items = TitleFeedbackStore.visible(row.items)
+            guard !items.isEmpty else { return nil }
+            return TVHubSectionRow(
+                id: row.id,
+                title: row.title,
+                catalogId: row.catalogId,
+                items: items,
+                addonName: row.addonName
+            )
+        }
+        guard !visibleRows.isEmpty else { return nil }
         return TVHubSection(
             id: source.id,
             title: source.name,
             addonName: source.addonName,
-            rows: rows
+            rows: visibleRows
         )
     }
 
+    /// One spotlight group's rows. The group's catalogs load together: a
+    /// provider contributes several ribbons, and loading them one at a time
+    /// would put a queue of requests in front of the hub's first paint.
+    func hubSpotlightRows(for group: TVHubSpotlightGroup) async -> [TVHubSectionRow] {
+        await withTaskGroup(of: (Int, [TVHubSectionRow]).self) { tasks in
+            for (index, source) in group.sources.enumerated() {
+                tasks.addTask { [source] in
+                    let section = await self.hubSection(for: source)
+                    return (index, section?.rows ?? [])
+                }
+            }
+            var rows = [[TVHubSectionRow]](repeating: [], count: group.sources.count)
+            for await (index, sectionRows) in tasks {
+                rows[index] = sectionRows
+            }
+            return rows.flatMap { $0 }
+        }
+    }
+
     private func hubDrillRows(for source: TVHubCatalogSource) async -> [TVHubSectionRow] {
-        let rowId = source.catalogId.lowercased().hasPrefix("hub-")
+        // Both prefixes name the same row: `hub-<id>` on the older catalogs,
+        // `rec-<id>` on the board's own. Leaving `rec-` in place built
+        // `rec-rec-<id>-drilldown`, a catalog that never exists.
+        let lowered = source.catalogId.lowercased()
+        let rowId = (lowered.hasPrefix("hub-") || lowered.hasPrefix("rec-"))
             ? String(source.catalogId.dropFirst(4))
             : source.catalogId
-        let tiles = await hubItems(
+        let drilled = await hubItems(
             source,
             catalogId: "rec-\(rowId)-drilldown",
             type: source.type,
             genre: nil
         ) ?? []
+        // The drill-down answers one of two ways: a list of sub-row tiles
+        // (`rec-<rowId>-<genre>-on-<service>`, each a catalog of its own) when
+        // the row declares `sub_rows`, or plain titles when it does not. Only
+        // the tile form can be expanded into rows; treating the plain form as
+        // tiles built catalogs out of imdb ids and dropped the whole band.
+        let tiles = drilled.filter {
+            let id = $0.id.lowercased()
+            return id.hasPrefix("rec-") && !id.hasPrefix("rec-drill:")
+        }
 
         guard !tiles.isEmpty else {
             // No drill tiles: the hub catalog's own merged grid is the section.
@@ -4254,6 +4658,103 @@ extension CinemetaCatalogRepository {
         }
         return loaded.compactMap { $0 }
     }
+
+    /// One streaming service's section: its catalog as the first row, then a
+    /// row per genre that catalog declares (`Comedy on Disney+`, `Kids on
+    /// Disney+`). Loaded in small batches like the drill tiles — a wide burst
+    /// is what the add-on hosts throttle — and an empty genre row is dropped
+    /// rather than shipped blank.
+    private func hubProviderRows(
+        for source: TVHubCatalogSource,
+        provider: String
+    ) async -> [TVHubSectionRow] {
+        // Send the manifest's own spelling: the options are matched exactly.
+        let genres = Self.providerGenreOrder
+            .compactMap { wanted in
+                source.genreOptions.first { $0.caseInsensitiveCompare(wanted) == .orderedSame }
+            }
+            .prefix(Self.providerGenreRowLimit)
+        var slots = [TVHubSectionRow?](repeating: nil, count: genres.count + 1)
+        if let items = await hubItems(
+            source, catalogId: source.catalogId, type: source.type, genre: source.genre
+        ), !items.isEmpty {
+            slots[0] = TVHubSectionRow(
+                id: "\(source.addonId)|\(source.catalogId)|all",
+                title: source.name,
+                catalogId: source.catalogId,
+                items: items,
+                addonName: source.addonName
+            )
+        }
+        let batchSize = 4
+        var start = 0
+        let ordered = Array(genres)
+        while start < ordered.count {
+            guard !Task.isCancelled else { break }
+            let end = min(start + batchSize, ordered.count)
+            let batch = Array(ordered[start..<end])
+            let offset = start
+            await withTaskGroup(of: (Int, TVHubSectionRow?).self) { group in
+                for (index, genre) in batch.enumerated() {
+                    group.addTask { [source] in
+                        guard let items = await self.hubItems(
+                            source, catalogId: source.catalogId, type: source.type, genre: genre
+                        ), !items.isEmpty else { return (offset + index + 1, nil) }
+                        return (offset + index + 1, TVHubSectionRow(
+                            id: "\(source.addonId)|\(source.catalogId)|\(genre)",
+                            title: "\(genre) on \(provider)",
+                            catalogId: source.catalogId,
+                            items: items,
+                            addonName: source.addonName
+                        ))
+                    }
+                }
+                for await (slot, row) in group {
+                    slots[slot] = row
+                }
+            }
+            start = end
+        }
+        return slots.compactMap { $0 }
+    }
+
+    /// "Disney+ Movies" → "Disney+"; nil for a name that does not belong to a
+    /// streaming service, so genre and theme rows are never expanded.
+    static func providerName(inCatalogName name: String) -> String? {
+        let tokens = name.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+        guard providerNameTokens.contains(where: { tokens.contains($0) }) else { return nil }
+        var provider = name
+        for suffix in [" Movies", " Series", " Shows", " TV", " Anime"] {
+            if provider.lowercased().hasSuffix(suffix.lowercased()) {
+                provider = String(provider.dropLast(suffix.count))
+                break
+            }
+        }
+        provider = provider.trimmingCharacters(in: .whitespacesAndNewlines)
+        return provider.isEmpty ? nil : provider
+    }
+
+    /// The words a catalog's name uses to say which service it belongs to.
+    private static let providerNameTokens: Set<String> = [
+        "netflix", "disney", "prime", "apple", "max", "hbo", "paramount",
+        "hulu", "crave", "peacock", "showtime", "starz", "britbox", "tubi", "pluto",
+    ]
+
+    /// The order a service's genre rows appear in. The catalog offers the full
+    /// TMDB list; leading with the family/kids rows is what makes a provider
+    /// tab read as the service rather than as a second genre browser.
+    private static let providerGenreOrder = [
+        "Kids", "Family", "Comedy", "Animation", "Action", "Action & Adventure",
+        "Adventure", "Drama", "Sci-Fi & Fantasy", "Science Fiction", "Fantasy",
+        "Mystery", "Crime", "Thriller", "Documentary",
+    ]
+    /// A provider section is the service's slate, not a genre browser: this
+    /// many genre rows (plus the service's own list) and no more. Eight is
+    /// enough to cover family, kids, comedy and the action/adventure pair
+    /// that makes a service feel populated rather than a single row.
+    private static let providerGenreRowLimit = 8
 
     /// One catalog's titles. The trailing `rec-drill:<rowId>` tile is a link to
     /// the drilldown, not a title, so it never reaches a row.
@@ -4328,5 +4829,52 @@ extension CinemetaCatalogRepository {
         if featuredHomeCatalogIDs.contains(id) { return true }
         let name = (catalog.name ?? "").lowercased()
         return featuredHomeCatalogNameKeywords.contains { name.contains($0) }
+    }
+
+    // MARK: Spotlights
+
+    /// A hub shows at most this many providers, and this many ribbons each:
+    /// the band is the first thing on screen, not a second Home page.
+    private static let spotlightProvidersLimit = 4
+    private static let spotlightRowsPerProvider = 4
+
+    /// The provider ribbons a hub hoists to its top band. Deliberately narrower
+    /// than `isFeaturedHomeCatalog`: a provider catalog names itself after the
+    /// ribbon ("Popular on Disney+", "New on Netflix", "Top 10 on Prime
+    /// Video"), while the taste engine's `rec-*` rows and the collection
+    /// catalogs carry a keyword without naming a provider and stay Home-only.
+    private static let spotlightNameKeywords: Set<String> = [
+        "popular", "trending", "top", "new", "upcoming", "recent", "hot",
+    ]
+
+    private static func isSpotlightCatalog(_ catalog: AddonManifestCatalog) -> Bool {
+        let rawType = catalog.type.lowercased()
+        if rawType == "collection" || rawType == "anime" { return false }
+        let id = catalog.id.lowercased()
+        if featuredHomeCatalogIDPrefixes.contains(where: { id.hasPrefix($0) }) { return false }
+        if featuredHomeCatalogIDs.contains(id) { return false }
+        let name = (catalog.name ?? "").lowercased()
+        return spotlightNameKeywords.contains { name.contains($0) }
+    }
+
+    /// "Popular on Disney+" → "Disney+"; a name with no provider marker falls
+    /// back to the add-on that serves it, so a group is never titleless.
+    static func spotlightProvider(forName name: String, fallback: String) -> String {
+        if let range = name.range(of: " on ", options: [.caseInsensitive]) {
+            let provider = name[range.upperBound...]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !provider.isEmpty { return String(provider.prefix(40)) }
+        }
+        return fallback
+    }
+
+    /// "Disney+ Movies", "Disney+ Series" — Android's band reads by noun, not
+    /// by the sidebar's own label ("TV" would make "Disney+ TV").
+    private static func spotlightNoun(kind: TVHubKind) -> String {
+        switch kind {
+        case .movies: return L10n.string("nav_movies", fallback: "Movies")
+        case .tv: return L10n.string("hub_spotlight_series", fallback: "Series")
+        case .anime: return L10n.string("nav_anime", fallback: "Anime")
+        }
     }
 }

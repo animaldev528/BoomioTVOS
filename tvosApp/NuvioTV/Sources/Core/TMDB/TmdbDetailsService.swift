@@ -192,8 +192,10 @@ enum TmdbDetailsService {
     ) async -> T {
         if requestContext != nil { return await operation() }
         let store = defaults ?? ProfileSettings.current
-        let rawKey = store.string(forKey: SettingsKey.tmdbApiKey)?
+        let typedKey = store.string(forKey: SettingsKey.tmdbApiKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        // A key typed in Settings wins; the build's own key is the fallback.
+        let rawKey = typedKey.isEmpty ? bundledApiKey : typedKey
         let keys = [
             SettingsKey.tmdbUseTrailers, SettingsKey.tmdbUseArtwork,
             SettingsKey.tmdbUseBasicInfo, SettingsKey.tmdbUseDetails,
@@ -207,7 +209,7 @@ enum TmdbDetailsService {
         })
         let context = RequestContext(
             apiKey: rawKey.isEmpty ? nil : rawKey,
-            isEnabled: (store.object(forKey: SettingsKey.tmdbEnabled) as? Bool) ?? false,
+            isEnabled: (store.object(forKey: SettingsKey.tmdbEnabled) as? Bool) ?? hasBundledApiKey,
             language: TmdbMetadataLanguage.resolvedLanguage(in: store),
             flags: flags
         )
@@ -245,16 +247,42 @@ enum TmdbDetailsService {
     }
 
     static var currentApiKey: String? { apiKey }
+
+    /// The TMDB key this build ships with.
+    ///
+    /// The Android client compiles one in (`BuildConfig.TMDB_API_KEY`), which is
+    /// why actor search, person pages and the rating badges work there with no
+    /// setup at all. Same contract here: CI injects the key from the
+    /// `TMDB_API_KEY` build setting into `TmdbApiKey` in the Info.plist. A key
+    /// the viewer types still wins, and a build without one keeps asking for
+    /// it in Settings → TMDB.
+    static var bundledApiKey: String {
+        let raw = ((Bundle.main.object(forInfoDictionaryKey: "TmdbApiKey") as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        // An unsubstituted build setting must never pass for a key.
+        return raw.hasPrefix("$(") ? "" : raw
+    }
+
+    static var hasBundledApiKey: Bool { !bundledApiKey.isEmpty }
+
     private static var apiKey: String? {
         if let requestContext { return requestContext.apiKey }
-        let key = ProfileSettings.current.string(forKey: SettingsKey.tmdbApiKey)?
+        let typed = ProfileSettings.current.string(forKey: SettingsKey.tmdbApiKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let key = typed.isEmpty ? bundledApiKey : typed
         return key.isEmpty ? nil : key
     }
 
     private static var isEnabled: Bool {
         if let requestContext { return requestContext.isEnabled }
-        return (ProfileSettings.current.object(forKey: SettingsKey.tmdbEnabled) as? Bool) ?? false
+        return (ProfileSettings.current.object(forKey: SettingsKey.tmdbEnabled) as? Bool)
+            ?? hasBundledApiKey
+    }
+
+    /// Whether TMDB can answer a lookup at all. Screens that show an empty
+    /// result use this to tell "nothing matched" from "TMDB is not set up".
+    static var isConfigured: Bool {
+        isEnabled && apiKey != nil
     }
 
     static var preferredLanguage: String {
@@ -499,7 +527,16 @@ enum TmdbDetailsService {
         }
         guard useMoreLikeThis else { return [] }
         guard let resolved = await resolveTmdbId(for: meta) else { return [] }
-        return await fetchRecommendations(
+        let recommendations = await fetchRecommendations(
+            tmdbId: resolved.id,
+            mediaType: resolved.mediaType,
+            limit: limit
+        )
+        guard recommendations.isEmpty else { return recommendations }
+        // "Recommendations" is empty for plenty of titles TMDB has no signal
+        // for. "Similar" is the looser list, and an empty screen is worse than
+        // a loose one.
+        return await fetchSimilar(
             tmdbId: resolved.id,
             mediaType: resolved.mediaType,
             limit: limit
@@ -1206,6 +1243,36 @@ enum TmdbDetailsService {
 
         let defaultType = mediaType == "tv" ? "series" : "movie"
         // Skip per-item IMDb lookup here for speed; CatalogRepository maps tmdb: → imdb on open.
+        return decoded.results.prefix(limit).compactMap {
+            mapDiscoverItemFast($0, defaultType: defaultType)
+        }
+    }
+
+    /// The looser sibling of `fetchRecommendations`, used when a title has no
+    /// recommendations at all.
+    private static func fetchSimilar(
+        tmdbId: Int,
+        mediaType: String,
+        limit: Int
+    ) async -> [RelatedTitle] {
+        guard let apiKey else { return [] }
+        var components = URLComponents(
+            url: apiBase.appendingPathComponent("\(mediaType)/\(tmdbId)/similar"),
+            resolvingAgainstBaseURL: false
+        )!
+        components.queryItems = [
+            URLQueryItem(name: "api_key", value: apiKey),
+            URLQueryItem(name: "language", value: preferredLanguage)
+        ]
+        guard let url = components.url,
+              let (data, response) = try? await data(for: url),
+              let http = response as? HTTPURLResponse,
+              (200...299).contains(http.statusCode),
+              let decoded = try? JSONDecoder().decode(TmdbPagedResults.self, from: data) else {
+            return []
+        }
+
+        let defaultType = mediaType == "tv" ? "series" : "movie"
         return decoded.results.prefix(limit).compactMap {
             mapDiscoverItemFast($0, defaultType: defaultType)
         }

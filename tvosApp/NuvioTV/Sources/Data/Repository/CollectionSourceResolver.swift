@@ -56,7 +56,8 @@ struct CollectionSourceResolver {
                 contentType: type,
                 catalogId: catalogId,
                 skip: max(cursor, 0),
-                genre: nonEmpty(source.genre)
+                genre: nonEmpty(source.genre),
+                search: nonEmpty(source.search)
             )
         case "tmdb":
             page = try await browseTmdb(source, page: max(cursor, 1))

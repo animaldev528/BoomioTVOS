@@ -17,6 +17,10 @@ struct HubBrowseView: View {
 
     @StateObject private var model: HubBrowseViewModel
     @FocusState private var focusedCardID: String?
+    /// Which hub section the ribbon has selected. `nil` until the user moves
+    /// through the ribbon, which means "the first one".
+    @State private var selectedSectionID: String?
+    @FocusState private var focusedTabID: String?
 
     init(
         kind: TVHubKind,
@@ -50,13 +54,21 @@ struct HubBrowseView: View {
                 model.cancel()
             }
         }
+        // "Not interested" is recorded locally, so the row has to re-read its
+        // items when the signal changes or the tile it just dismissed stays.
+        .onReceive(NotificationCenter.default.publisher(for: TitleFeedbackStore.changedNotification)) { _ in
+            model.applyFeedbackFilter()
+        }
     }
 
     private var content: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 44) {
-                ForEach(model.sections) { section in
-                    sectionView(section)
+            LazyVStack(alignment: .leading, spacing: 28) {
+                if showsRibbon {
+                    ribbon
+                }
+                if let section = activeSection {
+                    sectionView(section, showsTitle: !showsRibbon)
                 }
             }
             .padding(.top, 32)
@@ -67,13 +79,65 @@ struct HubBrowseView: View {
         .overlay { stateOverlay }
     }
 
-    private func sectionView(_ section: TVHubSection) -> some View {
+    /// Android's hub ribbon (`HubBrowseScreen.kt`): one tab per hub section,
+    /// selection follows tab focus, and only the selected section's rows are
+    /// drawn. A hub with a single section has no ribbon — the tab would be the
+    /// whole screen.
+    private var showsRibbon: Bool {
+        model.sections.count > 1
+    }
+
+    private var activeSection: TVHubSection? {
+        if let selectedSectionID,
+           let match = model.sections.first(where: { $0.id == selectedSectionID }) {
+            return match
+        }
+        return model.sections.first
+    }
+
+    private var ribbon: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 14) {
+                ForEach(model.sections) { section in
+                    let isSelected = activeSection?.id == section.id
+                    Button {
+                        selectedSectionID = section.id
+                    } label: {
+                        Text(section.title)
+                            .font(.appFont(size: 20, weight: .semibold))
+                            .foregroundColor(.white.opacity(isSelected ? 0.95 : 0.6))
+                            .lineLimit(1)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 10)
+                            .background(
+                                Color.white.opacity(isSelected ? 0.18 : 0.06),
+                                in: Capsule()
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .focused($focusedTabID, equals: section.id)
+                }
+            }
+            .padding(.horizontal, TVLayout.rowLeading)
+            .padding(.vertical, 6)
+        }
+        // Only the ribbon scrolls sideways; Up from the rows has to reach it.
+        .focusSection()
+        .onChange(of: focusedTabID) { _, id in
+            guard let id, id != selectedSectionID else { return }
+            selectedSectionID = id
+        }
+    }
+
+    private func sectionView(_ section: TVHubSection, showsTitle: Bool) -> some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text(section.title)
-                .font(.appFont(size: 26, weight: .semibold))
-                .foregroundColor(.white.opacity(0.86))
-                .lineLimit(1)
-                .padding(.leading, TVLayout.rowLeading)
+            if showsTitle {
+                Text(section.title)
+                    .font(.appFont(size: 26, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.86))
+                    .lineLimit(1)
+                    .padding(.leading, TVLayout.rowLeading)
+            }
 
             ForEach(section.rows) { row in
                 TVCatalogRow(
@@ -103,7 +167,7 @@ struct HubBrowseView: View {
     }
 
     private var firstFocusID: String? {
-        guard let row = model.sections.first(where: { !$0.rows.isEmpty })?.rows.first,
+        guard let row = activeSection?.rows.first(where: { !$0.items.isEmpty }),
               let item = row.items.first else { return nil }
         return TVHomeCardIdentity.key(rowID: row.id, item: item)
     }

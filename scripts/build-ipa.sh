@@ -49,6 +49,36 @@ if [[ ! -d "$APP_PATH" ]]; then
   exit 1
 fi
 
+# Bundled deploy ids. Info.plist declares them as placeholders that Xcode
+# substitutes from build settings, but Tuist caches its manifest evaluation, so
+# a cached project generated before the settings existed bakes them out as
+# empty strings and the app ships with no bundled app at all. Fill them here,
+# after the archive, from this run's environment. Unset stays empty, which is
+# what a local build should ship.
+if [[ -n "${TRAKT_CLIENT_ID:-}" ]]; then
+  if ! /usr/libexec/PlistBuddy -c "Set :TraktClientID ${TRAKT_CLIENT_ID}" "$APP_PATH/Info.plist" 2>/dev/null; then
+    /usr/libexec/PlistBuddy -c "Add :TraktClientID string ${TRAKT_CLIENT_ID}" "$APP_PATH/Info.plist"
+  fi
+  echo "==> Bundled Trakt client id"
+fi
+if [[ -n "${TMDB_API_KEY:-}" ]]; then
+  if ! /usr/libexec/PlistBuddy -c "Set :TmdbApiKey ${TMDB_API_KEY}" "$APP_PATH/Info.plist" 2>/dev/null; then
+    /usr/libexec/PlistBuddy -c "Add :TmdbApiKey string ${TMDB_API_KEY}" "$APP_PATH/Info.plist"
+  fi
+  echo "==> Bundled TMDB key"
+fi
+
+# Build stamp. Sideloading keeps the bundle id and version identical between
+# runs, so the device cannot otherwise tell a new IPA from an old one. The CI
+# passes the tag and commit; Settings → About shows it, which makes "am I
+# running the new build?" a question the screen answers.
+if [[ -n "${BOOMIO_BUILD_STAMP:-}" ]]; then
+  if ! /usr/libexec/PlistBuddy -c "Set :BoomioBuildStamp ${BOOMIO_BUILD_STAMP}" "$APP_PATH/Info.plist" 2>/dev/null; then
+    /usr/libexec/PlistBuddy -c "Add :BoomioBuildStamp string ${BOOMIO_BUILD_STAMP}" "$APP_PATH/Info.plist"
+  fi
+  echo "==> Build stamp ${BOOMIO_BUILD_STAMP}"
+fi
+
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PATH/Info.plist" 2>/dev/null || echo "latest")
 
 echo "==> Packaging unsigned IPA for version ${VERSION}..."

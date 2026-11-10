@@ -276,6 +276,10 @@ enum TVScreen: Equatable, CustomStringConvertible {
     case productionBrowse(MetaCompany)
     /// Movies and series associated with a TMDB person.
     case personBrowse(TmdbPersonMetadata)
+    /// Related titles for one card, reached from the tile long-press menu.
+    case moreLikeThis(id: String, type: String)
+    /// The public Trakt lists that contain one card, from the same menu.
+    case publicLists(id: String, type: String)
 
     var description: String {
         switch self {
@@ -288,6 +292,8 @@ enum TVScreen: Equatable, CustomStringConvertible {
         case let .collectionFolder(folder, title): return "collectionFolder(\(folder.id), \(title))"
         case let .productionBrowse(company): return "productionBrowse(\(company.name))"
         case let .personBrowse(person): return "personBrowse(\(person.name))"
+        case let .moreLikeThis(id, type): return "moreLikeThis(\(id), \(type))"
+        case let .publicLists(id, type): return "publicLists(\(id), \(type))"
         }
     }
 
@@ -537,6 +543,18 @@ struct ContentView: View {
     @State private var productionBrowseReturn: DetailsNavigationEntry?
     /// Details title to restore when leaving a person browse.
     @State private var personBrowseReturn: DetailsNavigationEntry?
+    /// The card whose "More like this" screen is open. The screen case carries
+    /// its identity; this carries the record the screen needs to load.
+    @State private var moreLikeThisMeta: NuvioMeta?
+    /// Where "More like this" was opened from, so Back returns there instead of
+    /// dropping the viewer on Home.
+    @State private var moreLikeThisOrigin: TVScreen?
+    /// The card whose "Public Lists" screen is open, and where it was opened
+    /// from so Back returns there.
+    @State private var publicListsMeta: NuvioMeta?
+    @State private var publicListsOrigin: TVScreen?
+    @State private var isAddingPublicListToHome = false
+    @StateObject private var titleActionBus = TitleActionBus.shared
     /// Titles to walk back through when Details opened Details ("More like
     /// this"). Empty means the current Details is the root of its chain and back
     /// belongs to its recorded return destination.
@@ -647,7 +665,7 @@ struct ContentView: View {
                         }
                 }
 
-            case .main, .details, .player, .cloudLibrary, .collectionFolder, .productionBrowse, .personBrowse:
+            case .main, .details, .player, .cloudLibrary, .collectionFolder, .productionBrowse, .personBrowse, .moreLikeThis, .publicLists:
                 // The tab view (Home included) stays mounted for the whole
                 // session; Details and Player are presented as overlays on TOP
                 // of it rather than replacing it. Returning therefore leaves
@@ -656,6 +674,26 @@ struct ContentView: View {
                 // scratch and snapping back to the first card.
                 appContainer
                     .transition(.opacity)
+                    .onReceive(titleActionBus.$moreLikeThis) { meta in
+                        guard let meta else { return }
+                        titleActionBus.moreLikeThis = nil
+                        openMoreLikeThisScreen(for: meta)
+                    }
+                    .onReceive(titleActionBus.$publicLists) { meta in
+                        guard let meta else { return }
+                        titleActionBus.publicLists = nil
+                        openPublicListsScreen(for: meta)
+                    }
+                    .onReceive(titleActionBus.$isAddingPublicList) { showing in
+                        guard showing else { return }
+                        titleActionBus.isAddingPublicList = false
+                        isAddingPublicListToHome = true
+                    }
+                    .sheet(isPresented: $isAddingPublicListToHome) {
+                        PublicListToHomeSheet {
+                            isAddingPublicListToHome = false
+                        }
+                    }
             }
 
             // The adaptive tab sidebar is briefly expanded while its first
@@ -1081,7 +1119,7 @@ struct ContentView: View {
     private var fullScreenOverlayPresented: Bool {
         if isResolvingContinueWatchingStream { return true }
         switch activeScreen {
-        case .details, .player, .cloudLibrary, .collectionFolder, .productionBrowse, .personBrowse: return true
+        case .details, .player, .cloudLibrary, .collectionFolder, .productionBrowse, .personBrowse, .moreLikeThis, .publicLists: return true
         default: return false
         }
     }
@@ -1165,12 +1203,53 @@ struct ContentView: View {
                 }
                 personBrowseReturn = nil
             }
+        case .moreLikeThis:
+            withAnimation(.easeInOut(duration: 0.24)) {
+                activeScreen = moreLikeThisOrigin ?? .main
+                moreLikeThisOrigin = nil
+                moreLikeThisMeta = nil
+            }
+        case .publicLists:
+            withAnimation(.easeInOut(duration: 0.24)) {
+                activeScreen = publicListsOrigin ?? .main
+                publicListsOrigin = nil
+                publicListsMeta = nil
+            }
         default:
             break
         }
     }
 
     private func ignorePlayerDismissalHandoffExit() {}
+
+    /// Opens the long-press menu's "More like this" grid for one card.
+    private func openMoreLikeThisScreen(for meta: NuvioMeta) {
+        // A screen opened from the screen it replaces would make Back cyclic.
+        if case .moreLikeThis = activeScreen {
+            // Keep the origin already recorded.
+        } else {
+            moreLikeThisOrigin = activeScreen
+        }
+        moreLikeThisMeta = meta
+        withAnimation(.easeInOut(duration: 0.24)) {
+            activeScreen = .moreLikeThis(id: meta.id, type: meta.type)
+        }
+    }
+
+    /// Opens the long-press menu's "Public Lists" screen for one card.
+    private func openPublicListsScreen(for meta: NuvioMeta) {
+        // Same rule as More like this: an overlay that replaced its own origin
+        // would make Back cyclic.
+        if case .publicLists = activeScreen {
+            // Keep the origin already recorded.
+        } else {
+            publicListsOrigin = activeScreen
+        }
+        publicListsMeta = meta
+        withAnimation(.easeInOut(duration: 0.24)) {
+            activeScreen = .publicLists(id: meta.id, type: meta.type)
+        }
+    }
 
     /// Backs out of Details to the title it was opened from (a "More like this"
     /// chain), or to the screen that opened the root Details.
@@ -2859,6 +2938,45 @@ struct ContentView: View {
                             }
                             personBrowseReturn = nil
                         }
+                    }
+                )
+                .transition(.opacity)
+                .onDisappear {
+                    detailsDidDisappearGeneration &+= 1
+                }
+                .zIndex(1)
+            }
+
+            if case .moreLikeThis = activeScreen, let meta = moreLikeThisMeta {
+                MoreLikeThisView(
+                    meta: meta,
+                    onSelect: { id, type in
+                        withAnimation(.easeInOut(duration: 0.28)) {
+                            moreLikeThisMeta = nil
+                            openDetailsRoot(id: id, type: type)
+                        }
+                    },
+                    onBack: { dismissOverlay() }
+                )
+                .transition(.opacity)
+                .onDisappear {
+                    detailsDidDisappearGeneration &+= 1
+                }
+                .zIndex(1)
+            }
+
+            if case .publicLists = activeScreen, let meta = publicListsMeta {
+                PublicListsView(
+                    meta: meta,
+                    onSelect: { id, type in
+                        withAnimation(.easeInOut(duration: 0.28)) {
+                            publicListsMeta = nil
+                            openDetailsRoot(id: id, type: type)
+                        }
+                    },
+                    onBack: { dismissOverlay() },
+                    onAddListToHome: {
+                        isAddingPublicListToHome = true
                     }
                 )
                 .transition(.opacity)
@@ -10318,7 +10436,13 @@ struct TVHomeSection: Identifiable {
     let id: String
     let title: String
     var items: [NuvioMeta] {
-        didSet { items = TVHomeCardIdentity.uniqueTitles(items) }
+        didSet {
+            items = TVHomeCardIdentity.uniqueTitles(items)
+            // "Not interested" is recorded locally, so the row drops the title
+            // here rather than every row builder having to remember to.
+            let visible = TitleFeedbackStore.visible(items)
+            if visible.count != items.count { items = visible }
+        }
     }
     var contentType: String? = nil
     var catalogId: String? = nil
@@ -11925,6 +12049,29 @@ final class TVHomeStore: ObservableObject {
     private var loadedContentIdentity: TVHomeContentIdentity?
     private var loadingContentIdentity: TVHomeContentIdentity?
     private var loadGeneration: UInt = 0
+    private var feedbackObserver: NSObjectProtocol?
+
+    init() {
+        // "Not interested" is recorded locally, so a row has to re-read its
+        // items when it changes. Re-assigning the element re-runs
+        // `TVHomeSection.items`'s didSet, which is what drops the title.
+        feedbackObserver = NotificationCenter.default.addObserver(
+            forName: TitleFeedbackStore.changedNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            for index in self.sections.indices {
+                self.sections[index].items = self.sections[index].items
+            }
+        }
+    }
+
+    deinit {
+        if let feedbackObserver {
+            NotificationCenter.default.removeObserver(feedbackObserver)
+        }
+    }
 
     func isLoaded(for identity: TVHomeContentIdentity) -> Bool {
         hasLoaded && loadedContentIdentity == identity
