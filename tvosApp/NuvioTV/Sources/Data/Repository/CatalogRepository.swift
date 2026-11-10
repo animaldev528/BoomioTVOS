@@ -4454,14 +4454,18 @@ extension CinemetaCatalogRepository {
                 return l != r ? l < r : lhs.offset < rhs.offset
             }
             .map(\.element)
-        // One band per provider. A service that ships a genre-bearing catalog
-        // is drawn as its slate — its own list plus a row per genre — while the
-        // same service's `hub-*` ribbon from another add-on drills to a single
-        // row. The single row is the band the hub was criticised for, so the
-        // rich section wins and its one-row twin is dropped. Providers with no
-        // genre-bearing catalog keep their band, but only one copy of it: the
-        // same row is commonly installed twice (the board's hub and the
-        // per-row add-on that names it).
+        // One band per provider. The board's `hub-*` ribbon is the richest:
+        // its drill-down names the service's own rows ("New on Disney+",
+        // "Trending on Disney+", "Comedies on Disney+", ...). The catalog
+        // add-on's plain provider catalog is the fallback when no ribbon
+        // exists, drawn as its own list plus a row per genre. Both are
+        // commonly installed for the same service, and the same ribbon is
+        // often installed twice (the board and the per-row add-on), so keep
+        // exactly one band per provider.
+        let hubProviderKeys = Set(hubs.compactMap { source -> String? in
+            guard Self.providerName(inCatalogName: source.name) != nil else { return nil }
+            return Self.providerKey(for: source)
+        })
         let richProviders = Set((hubs + plainSources).compactMap { source -> String? in
             guard Self.providerName(inCatalogName: source.name) != nil,
                   source.genreOptions.count >= 4 else { return nil }
@@ -4472,9 +4476,13 @@ extension CinemetaCatalogRepository {
         func keep(_ source: TVHubCatalogSource) -> Bool {
             guard Self.providerName(inCatalogName: source.name) != nil else { return true }
             let key = Self.providerKey(for: source)
+            if hubProviderKeys.contains(key) {
+                // The ribbon covers the service; anything else for it is a
+                // duplicate or a thinner second copy.
+                guard source.isHub || source.catalogId.lowercased().hasPrefix("rec-") else { return false }
+                return keptRich.insert(key).inserted
+            }
             if richProviders.contains(key) {
-                // A rich source replaces every ribbon for the same service.
-                if source.isHub || source.catalogId.lowercased().hasPrefix("rec-") { return false }
                 guard source.genreOptions.count >= 4 else { return true }
                 return keptRich.insert(key).inserted
             }
@@ -4584,12 +4592,21 @@ extension CinemetaCatalogRepository {
         let rowId = (lowered.hasPrefix("hub-") || lowered.hasPrefix("rec-"))
             ? String(source.catalogId.dropFirst(4))
             : source.catalogId
-        let tiles = await hubItems(
+        let drilled = await hubItems(
             source,
             catalogId: "rec-\(rowId)-drilldown",
             type: source.type,
             genre: nil
         ) ?? []
+        // The drill-down answers one of two ways: a list of sub-row tiles
+        // (`rec-<rowId>-<genre>-on-<service>`, each a catalog of its own) when
+        // the row declares `sub_rows`, or plain titles when it does not. Only
+        // the tile form can be expanded into rows; treating the plain form as
+        // tiles built catalogs out of imdb ids and dropped the whole band.
+        let tiles = drilled.filter {
+            let id = $0.id.lowercased()
+            return id.hasPrefix("rec-") && !id.hasPrefix("rec-drill:")
+        }
 
         guard !tiles.isEmpty else {
             // No drill tiles: the hub catalog's own merged grid is the section.
