@@ -189,6 +189,13 @@ protocol CatalogRepository {
     /// Search while preserving whether every configured source completed.
     func searchWithOutcome(query: String) async throws -> CatalogSearchOutcome
 
+    /// The slow lane of a search: catalogs whose answers take many seconds
+    /// (the AI episode/title search catalogs run 4–21 s). They are asked after
+    /// the fast fan-out and merged into the grid when they land, so they never
+    /// delay or invalidate the quick sources. Repositories without slow
+    /// sources answer empty and complete.
+    func searchSlowOutcome(query: String) async -> CatalogSearchOutcome
+
     /// Browse catalog with pagination and filters
     func browseCatalog(
         contentType: String,
@@ -255,6 +262,10 @@ extension CatalogRepository {
 
     func searchWithOutcome(query: String) async throws -> CatalogSearchOutcome {
         CatalogSearchOutcome(results: try await search(query: query), isComplete: true)
+    }
+
+    func searchSlowOutcome(query: String) async -> CatalogSearchOutcome {
+        CatalogSearchOutcome(results: [], isComplete: true)
     }
 
     func getDiscoverSources() async -> [DiscoverCatalogOption] { [] }
@@ -2174,6 +2185,12 @@ final class CinemetaCatalogRepository: CatalogRepository {
         }
 
         var targets: [SearchTarget] = []
+        /// Catalogs whose answers take many seconds. They are deliberately left
+        /// out of the fast fan-out below: a 5 s deadline is shorter than their
+        /// real latency, so including them only ever produces a timeout and a
+        /// row that flickers in and out between queries. `searchSlowOutcome`
+        /// asks them with a deadline that fits, and the grid merges the answer.
+        var slowTargets: [SearchTarget] = []
         let builtInCinemetaManifestURL = baseURL.appendingPathComponent("manifest.json")
         let candidateURLs = Self.configuredStreamAddonManifestURLs.filter {
             $0.absoluteString.caseInsensitiveCompare(builtInCinemetaManifestURL.absoluteString) != .orderedSame
@@ -2221,23 +2238,31 @@ final class CinemetaCatalogRepository: CatalogRepository {
                 advertisedCatalogCount += catalogs.count
                 for catalog in catalogs where catalog.supportsSearch {
                     searchCapableCatalogCount += 1
-                    targets.append(
-                        SearchTarget(
-                            addonName: addonName,
-                            baseURL: sourceBaseURL,
-                            type: catalog.type,
-                            catalogId: catalog.id,
-                            isAddon: true,
-                            displayName: catalog.name?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-                                ?? addonName
-                        )
+                    let target = SearchTarget(
+                        addonName: addonName,
+                        baseURL: sourceBaseURL,
+                        type: catalog.type,
+                        catalogId: catalog.id,
+                        isAddon: true,
+                        displayName: catalog.name?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                            ?? addonName
                     )
+                    if Self.isSlowSearchCatalog(id: catalog.id) {
+                        slowTargets.append(target)
+                    } else {
+                        targets.append(target)
+                    }
                 }
             }
         }
 
         // Do not silently re-enable Cinemeta when the user explicitly disabled it.
         guard !targets.isEmpty else {
+            if !slowTargets.isEmpty {
+                // Only the slow catalogs are configured: their answer is the
+                // slow lane's to bring, so this is not a finished search.
+                return CatalogSearchOutcome(results: [], isComplete: false)
+            }
             let isComplete = missingManifestCount == 0
             let reason: CatalogSearchReason
             if missingManifestCount > 0 {
@@ -2378,6 +2403,116 @@ final class CinemetaCatalogRepository: CatalogRepository {
             sections: sections,
             isComplete: isComplete
         )
+    }
+
+    /// The slow lane: the AI search catalogs, asked with the deadline their
+    /// real latency needs. bsf answers `/ai-search*` in 4–21 s (measured), so
+    /// the fast fan-out's 5 s cap could only ever drop them — which is what
+    /// made episode search work intermittently. This lane runs beside the fast
+    /// one and the grid merges the answer, so a slow lookup never delays a
+    /// quick source and never reads as "search failed".
+    func searchSlowOutcome(query: String) async -> CatalogSearchOutcome {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return CatalogSearchOutcome(results: [], isComplete: true) }
+        let manifestURLs = Self.configuredStreamAddonManifestURLs
+        guard !manifestURLs.isEmpty else { return CatalogSearchOutcome(results: [], isComplete: true) }
+        let manifests = await loadManifestsConcurrently(urls: manifestURLs)
+        let metadataContext = Self.metadataCacheContext
+
+        var targets: [(addonName: String, baseURL: URL, type: String, catalogId: String, displayName: String)] = []
+        for manifestURL in manifestURLs {
+            guard let manifest = manifests[manifestURL], manifest.id != Self.cinemetaAddonId else { continue }
+            let base = manifestURL.lastPathComponent.lowercased() == "manifest.json"
+                ? manifestURL.deletingLastPathComponent()
+                : manifestURL
+            let addonName = Self.streamAddonDisplayName(for: manifestURL, manifestName: manifest.displayName)
+            for catalog in manifest.catalogs ?? [] where catalog.supportsSearch {
+                guard Self.isSlowSearchCatalog(id: catalog.id) else { continue }
+                targets.append((
+                    addonName: addonName,
+                    baseURL: base,
+                    type: catalog.type,
+                    catalogId: catalog.id,
+                    displayName: catalog.name?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                        ?? addonName
+                ))
+            }
+        }
+        guard !targets.isEmpty else { return CatalogSearchOutcome(results: [], isComplete: true) }
+
+        typealias SlowResult = (index: Int, items: [NuvioMeta], succeeded: Bool)
+        let results = await withTaskGroup(of: SlowResult.self, returning: [SlowResult].self) { group in
+            for (index, target) in targets.enumerated() {
+                group.addTask {
+                    guard !Task.isCancelled else { return (index, [], false) }
+                    do {
+                        let items: [NuvioMeta] = try await withThrowingTaskGroup(of: [NuvioMeta].self) { fetchGroup in
+                            fetchGroup.addTask {
+                                try await self.fetchCatalog(
+                                    sourceBaseURL: target.baseURL,
+                                    type: target.type,
+                                    catalogId: target.catalogId,
+                                    skip: nil,
+                                    search: trimmed,
+                                    genre: nil
+                                )
+                            }
+                            fetchGroup.addTask {
+                                try await Task.sleep(nanoseconds: UInt64(Self.slowSearchDeadline * 1_000_000_000))
+                                try Task.checkCancellation()
+                                throw URLError(.timedOut)
+                            }
+                            guard let first = try await fetchGroup.next() else { return [] }
+                            fetchGroup.cancelAll()
+                            return first
+                        }
+                        return (index, items.map { $0.withIsFromAddon(true) }, true)
+                    } catch {
+                        return (index, [], false)
+                    }
+                }
+            }
+            var completed: [SlowResult] = []
+            for await result in group {
+                completed.append(result)
+            }
+            return completed.sorted { $0.index < $1.index }
+        }
+        guard !Task.isCancelled else { return CatalogSearchOutcome(results: [], isComplete: false) }
+
+        var sections: [CatalogSearchSection] = []
+        var flat: [NuvioMeta] = []
+        for result in results where result.succeeded && !result.items.isEmpty {
+            let target = targets[result.index]
+            let deduplicated = Self.deduplicatedSearchResults(result.items)
+            guard !deduplicated.isEmpty else { continue }
+            flat.append(contentsOf: deduplicated)
+            sections.append(CatalogSearchSection(
+                id: "\(target.catalogId)|\(target.addonName)",
+                title: target.displayName,
+                addonName: target.addonName,
+                catalogId: target.catalogId,
+                type: target.type,
+                results: deduplicated
+            ))
+        }
+        cacheMetadata(flat, context: metadataContext)
+        return CatalogSearchOutcome(
+            results: Self.deduplicatedSearchResults(flat),
+            sections: sections,
+            isComplete: true
+        )
+    }
+
+    /// How long the slow lane waits for one catalog. bsf's AI search tops out
+    /// around 21 s; the margin covers a cold model call without hanging the
+    /// grid forever — the row simply does not appear when the call loses.
+    static let slowSearchDeadline: TimeInterval = 30
+
+    /// A search catalog whose answer is a multi-second model lookup rather than
+    /// a database query. Their ids say so (`ai-search`, `ai-search-episodes`).
+    private static func isSlowSearchCatalog(id: String) -> Bool {
+        id.lowercased().contains("ai-search")
     }
 
     /// Search sources can identify the same title differently (for example,
@@ -4553,8 +4688,7 @@ extension CinemetaCatalogRepository {
     }
 
     /// Mirrors Android's `isSearchOnlyCatalog()`: only the object form with
-    /// `name: "search", isRequired: true` is a search-only catalog.
-    private static func isSearchOnlyCatalog(_ catalog: AddonManifestCatalog) -> Bool {
+    /// `name: "search", isRequired: true` is a search-only catalog.    private static func isSearchOnlyCatalog(_ catalog: AddonManifestCatalog) -> Bool {
         (catalog.extra ?? []).contains {
             $0.name.caseInsensitiveCompare("search") == .orderedSame && $0.isRequired == true
         }

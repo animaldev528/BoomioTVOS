@@ -53,6 +53,10 @@ class SearchViewModel: ObservableObject {
     private var peopleQuery: String?
     private var cancellables = Set<AnyCancellable>()
     private var searchTask: Task<Void, Never>?
+    /// The AI search catalogs' lane. It runs beside the fast fan-out and merges
+    /// its rows into the grid when it lands (see `searchSlowOutcome`), so a
+    /// multi-second model lookup cannot delay or cancel the quick sources.
+    private var slowSearchTask: Task<Void, Never>?
     private var searchTimeoutTask: Task<Void, Never>?
     private var searchGeneration: UInt64 = 0
     /// Runs after the raw search grid is visible: refreshes the top results'
@@ -173,6 +177,8 @@ class SearchViewModel: ObservableObject {
         let generation = searchGeneration
         searchTimeoutTask?.cancel()
         searchTask?.cancel()
+        slowSearchTask?.cancel()
+        slowSearchTask = nil
         enrichmentTask?.cancel()
 
         guard !trimmed.isEmpty else {
@@ -206,6 +212,13 @@ class SearchViewModel: ObservableObject {
             emptyStateReason = cached.results.isEmpty ? cached.reason : nil
             isLoading = false
             if !cached.results.isEmpty { commitRecentSearch(trimmed) }
+            // The AI rows are never cached (they cost a model call per query),
+            // so the slow lane runs on every query, cache hit included.
+            startSlowSearch(query: trimmed, generation: generation)
+            if cached.results.isEmpty && slowSearchTask != nil {
+                isLoading = true
+                emptyStateReason = nil
+            }
             if SearchResultEnrichment.hasIncompleteLeadingResults(cached.results)
                 || SearchResultEnrichment.hasIncompleteLeadingSections(cached.sections) {
                 enrich(cached.results, cacheKey: cacheKey, generation: generation, cacheable: true)
@@ -248,8 +261,13 @@ class SearchViewModel: ObservableObject {
                 }
                 self.applyFilter()
                 if !found.isEmpty { self.commitRecentSearch(trimmed) }
-                self.emptyStateReason = outcome.isComplete
-                    ? (found.isEmpty ? outcome.reason : nil)
+                // The slow lane owns the AI rows. With nothing else to show, the
+                // screen keeps spinning for it instead of claiming there were no
+                // results — that claim is only true once the lane has answered.
+                self.startSlowSearch(query: trimmed, generation: generation)
+                let slowPending = self.slowSearchTask != nil
+                self.emptyStateReason = outcome.isComplete || slowPending
+                    ? (found.isEmpty && !slowPending ? outcome.reason : nil)
                     : .requestFailed
                 if self.emptyStateReason == .requestFailed && found.isEmpty {
                     self.error = L10n.string(
@@ -259,7 +277,7 @@ class SearchViewModel: ObservableObject {
                 } else {
                     self.error = nil
                 }
-                self.isLoading = false
+                self.isLoading = found.isEmpty && slowPending
                 if SearchResultEnrichment.hasIncompleteLeadingResults(found)
                     || SearchResultEnrichment.hasIncompleteLeadingSections(outcome.sections) {
                     self.enrich(
@@ -283,6 +301,9 @@ class SearchViewModel: ObservableObject {
 
     private func handleSearchTimeout(generation: UInt64) {
         guard self.searchGeneration == generation, self.isLoading else { return }
+        // An AI lookup can legitimately run past the fast lane's timeout; the
+        // slow lane has its own deadline and ends the spinner when it answers.
+        if slowSearchTask != nil { return }
         self.searchTask?.cancel()
         self.emptyStateReason = .requestFailed
         self.error = L10n.string(
@@ -341,6 +362,62 @@ class SearchViewModel: ObservableObject {
                 )
             }
             self.applyFilter()
+        }
+    }
+
+    /// Asks the slow search catalogs (see `searchSlowOutcome`) and folds their
+    /// rows into the grid that the fast fan-out already published. Guarded by
+    /// the same generation/query check as enrichment, so a late model answer
+    /// can never land on a newer query.
+    private func startSlowSearch(query: String, generation: UInt64) {
+        slowSearchTask?.cancel()
+        slowSearchTask = Task { [weak self] in
+            guard let self else { return }
+            let outcome = await self.repository.searchSlowOutcome(query: query)
+            let key = query.trimmingCharacters(in: .whitespacesAndNewlines)
+                .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            guard !Task.isCancelled,
+                  self.searchGeneration == generation,
+                  self.normalizedQuery() == key
+            else { return }
+            self.slowSearchTask = nil
+            guard !outcome.sections.isEmpty else {
+                // Nothing from the slow lane: an empty grid that was waiting on
+                // it gets its honest empty state now.
+                if self.isLoading && self.allResults.isEmpty {
+                    self.isLoading = false
+                    self.emptyStateReason = .noResults
+                }
+                return
+            }
+            let resulting = CinemetaCatalogRepository.deduplicatedSearchResults(
+                outcome.sections.flatMap { $0.results }
+            )
+            // An AI episode result is one episode, never its show: merging it
+            // with the fast grid by title would collapse "The Simpsons S5E3"
+            // into the series tile the other catalogs returned. It keeps its own
+            // row; the flat list carries both.
+            var merged = self.allSections
+            for section in outcome.sections {
+                if let index = merged.firstIndex(where: { $0.id == section.id }) {
+                    merged[index] = section
+                } else {
+                    merged.append(section)
+                }
+            }
+            self.allSections = merged
+            self.allResults = CinemetaCatalogRepository.deduplicatedSearchResults(
+                merged.flatMap { $0.results }
+            )
+            if resulting.isEmpty && self.allResults.isEmpty {
+                self.isLoading = false
+                self.emptyStateReason = .noResults
+                return
+            }
+            self.applyFilter()
+            self.isLoading = false
+            self.error = nil
+            self.emptyStateReason = nil
         }
     }
 
