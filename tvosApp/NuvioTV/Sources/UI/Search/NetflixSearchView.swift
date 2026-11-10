@@ -1046,8 +1046,29 @@ struct NetflixSearchView: View {
             },
             onFocusItem: { item in lastFocusedItemID = item.id },
             onLongPressItem: onLongPress,
-            onSelectPerson: onOpenPerson
+            onSelectPerson: onOpenPerson,
+            onAddSectionToHome: { section in addRowToHome(section) }
         )
+    }
+
+    /// Pins one source row to Home as a saved query, so an episode search can
+    /// live on Home without freezing one snapshot of its results.
+    private func addRowToHome(_ section: CatalogSearchSection) {
+        guard let addonId = section.addonId,
+              let term = section.searchTerm?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !term.isEmpty else { return }
+        let title = "\(section.title) · \(term)"
+        let source: [String: Any] = [
+            "provider": "addon",
+            "addonId": addonId,
+            "addon_id": addonId,
+            "type": section.type,
+            "catalogId": section.catalogId,
+            "catalog_id": section.catalogId,
+            "search": term,
+            "title": title
+        ]
+        CollectionQuickAdd.addList(source: source, fallbackTitle: title)
     }
 
     private var resultsGrid: some View {
