@@ -245,16 +245,14 @@ struct DetailsScreen: View {
                         finishInitialPlaybackRequest(requestID)
                     },
                     onPlayClick: {
-                        // Movie (or a series with no episode list): make sure streams
-                        // are loaded for the canonical title id, then either auto-select
-                        // or open the picker.
+                        // Movie (or a series whose episode is resolved first):
+                        // make sure streams are loaded for the play target, then
+                        // either auto-select or open the picker.
                         if creatingWatchPartyRoom, let meta = viewModel.uiState.meta, !meta.isSeries {
                             onWatchPartyMediaSelected?(meta, nil)
                             return
                         }
-                        pendingEpisodeSubtitle = ""
-                        pendingEpisode = nil
-                        startStreamFlow(streamId: viewModel.uiState.meta?.streamId ?? id, type: viewModel.uiState.meta?.type ?? type, reload: viewModel.uiState.streams.isEmpty)
+                        startTitleStreamFlow(forceManualPicker: false)
                     },
                     onPlayManually: {
                         // Hold-to-play-manually: always open the picker even when Auto Select is on.
@@ -262,14 +260,7 @@ struct DetailsScreen: View {
                             onWatchPartyMediaSelected?(meta, nil)
                             return
                         }
-                        pendingEpisodeSubtitle = ""
-                        pendingEpisode = nil
-                        startStreamFlow(
-                            streamId: viewModel.uiState.meta?.streamId ?? id,
-                            type: viewModel.uiState.meta?.type ?? type,
-                            reload: viewModel.uiState.streams.isEmpty,
-                            forceManualPicker: true
-                        )
+                        startTitleStreamFlow(forceManualPicker: true)
                     },
                     onHostWatchParty: onCreateWatchParty == nil ? nil : { episode in
                         guard let meta = viewModel.uiState.meta else { return }
@@ -632,15 +623,80 @@ struct DetailsScreen: View {
             } ?? requested
         }
         pendingEpisode = requestedEpisode
-        if let episode = requestedEpisode {
+        if let episode = requestedEpisode ?? episodeForStreamRequest(meta: meta) {
+            if requestedEpisode == nil { pendingEpisode = episode }
             pendingEpisodeSubtitle = "S\(episode.season) · E\(episode.episode) · \(episode.title)"
             let streamId = canonicalEpisodeStreamId(for: episode, meta: meta)
             viewModel.prepareStreams(forId: streamId, type: "series")
-        } else {
+        } else if !isSeries(meta) {
             pendingEpisodeSubtitle = ""
             viewModel.prepareStreams(forId: meta.streamId, type: meta.type)
         }
         isStreamPickerPresented = true
+    }
+
+    private func isSeries(_ meta: NuvioMeta) -> Bool {
+        meta.isSeries || NuvioMeta.isSeriesType(meta.type)
+    }
+
+    /// The episode the source picker asks about when the viewer opened the
+    /// screen without one.
+    ///
+    /// A series has no sources of its own, and asking the media plane for the
+    /// bare series id is not harmless: bsf answers it by scraping the whole
+    /// show, and every release it finds is filed in its mesh cache with no
+    /// season and no episode — where the "OR is a season pack" clause then lets
+    /// it satisfy *every* episode request for that show. One such request for
+    /// The Simpsons put 598 rows in the cache and turned every episode's source
+    /// list into season packs. Asking for a real episode is the same request a
+    /// viewer makes by pressing Play, and it keeps the cache honest.
+    private func episodeForStreamRequest(meta: NuvioMeta) -> NuvioVideo? {
+        guard isSeries(meta) else { return nil }
+        if let pendingEpisode { return pendingEpisode }
+        // Play resumes where the viewer left off; the guide's first episode is
+        // the fallback when there is no progress to continue.
+        if let target = viewModel.resolveDefaultPlayTarget(for: meta), let episode = target.episode {
+            return episode
+        }
+        return (meta.videos ?? [])
+            .filter { $0.season > 0 }
+            .min { ($0.season, $0.episode) < ($1.season, $1.episode) }
+    }
+
+    /// Play and hold-to-play-manually on the title's own button. A series has no
+    /// stream of its own, so this always resolves an episode first — never the
+    /// bare series id.
+    private func startTitleStreamFlow(forceManualPicker: Bool) {
+        guard let meta = viewModel.uiState.meta else {
+            startStreamFlow(
+                streamId: id,
+                type: type,
+                reload: viewModel.uiState.streams.isEmpty,
+                forceManualPicker: forceManualPicker
+            )
+            return
+        }
+        if let episode = episodeForStreamRequest(meta: meta) {
+            pendingEpisodeSubtitle = "S\(episode.season) · E\(episode.episode) · \(episode.title)"
+            pendingEpisode = episode
+            let streamId = canonicalEpisodeStreamId(for: episode, meta: meta)
+            let isPreFetched = viewModel.prefetchedStreamId == streamId && !viewModel.uiState.streams.isEmpty
+            startStreamFlow(
+                streamId: streamId,
+                type: "series",
+                reload: !isPreFetched,
+                forceManualPicker: forceManualPicker
+            )
+        } else {
+            pendingEpisodeSubtitle = ""
+            pendingEpisode = nil
+            startStreamFlow(
+                streamId: meta.streamId,
+                type: meta.type,
+                reload: viewModel.uiState.streams.isEmpty,
+                forceManualPicker: forceManualPicker
+            )
+        }
     }
 
     private func canonicalEpisodeStreamId(for video: NuvioVideo, meta: NuvioMeta?) -> String {
@@ -650,10 +706,11 @@ struct DetailsScreen: View {
     private func refreshSources() {
         guard let meta = viewModel.uiState.meta else { return }
         streamPickerAvailabilityMessage = nil
-        if let episode = pendingEpisode {
+        if let episode = pendingEpisode ?? episodeForStreamRequest(meta: meta) {
+            if pendingEpisode == nil { pendingEpisode = episode }
             let streamId = canonicalEpisodeStreamId(for: episode, meta: meta)
             viewModel.prepareStreams(forId: streamId, type: "series", forceRefresh: true)
-        } else {
+        } else if !isSeries(meta) {
             viewModel.prepareStreams(forId: meta.streamId, type: meta.type, forceRefresh: true)
         }
     }
