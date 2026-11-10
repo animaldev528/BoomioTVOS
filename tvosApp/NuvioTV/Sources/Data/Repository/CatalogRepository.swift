@@ -4127,6 +4127,11 @@ struct TVHubCatalogSource: Identifiable {
     let name: String
     /// A required genre is satisfied with the catalog's first declared option.
     let genre: String?
+    /// The `genre` extra's declared options, when the catalog offers one.
+    /// A streaming service's catalog (`catalog.nuvio.tv`'s "Disney+ Movies")
+    /// declares the whole genre list on a single catalog, which is what lets a
+    /// provider tab be more than one row. Empty when the catalog takes none.
+    var genreOptions: [String] = []
 
     var id: String { "\(addonId)|\(type)|\(catalogId)" }
     var isHub: Bool { catalogId.lowercased().hasPrefix("hub-") }
@@ -4207,7 +4212,10 @@ extension CinemetaCatalogRepository {
                     catalogId: catalog.id,
                     name: catalog.name?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
                         ?? catalog.id,
-                    genre: catalog.requiresGenre ? catalog.firstGenreOption : nil
+                    genre: catalog.requiresGenre ? catalog.firstGenreOption : nil,
+                    genreOptions: catalog.requiresGenre
+                        ? []
+                        : (catalog.extra?.first { $0.name.caseInsensitiveCompare("genre") == .orderedSame }?.options ?? [])
                 )
                 if Self.isSpotlightCatalog(catalog) {
                     let provider = Self.spotlightProvider(forName: source.name, fallback: addonName)
@@ -4265,6 +4273,14 @@ extension CinemetaCatalogRepository {
         // back to its own grid as a single row (see `hubDrillRows`).
         if source.isHub || source.catalogId.lowercased().hasPrefix("rec-") {
             rows = await hubDrillRows(for: source)
+        } else if let provider = Self.providerName(inCatalogName: source.name),
+                  source.genreOptions.count >= 4 {
+            // A streaming service's catalog declares a `genre` extra, and that
+            // is the whole difference between "Disney+ Movies" as one row and
+            // the service's slate: the catalog's own list, then one row per
+            // genre it offers. Without this expansion every provider tab on
+            // this board is a single row, which is what makes them look empty.
+            rows = await hubProviderRows(for: source, provider: provider)
         } else if let items = await hubItems(
             source, catalogId: source.catalogId, type: source.type, genre: source.genre
         ), !items.isEmpty {
@@ -4392,6 +4408,101 @@ extension CinemetaCatalogRepository {
         }
         return loaded.compactMap { $0 }
     }
+
+    /// One streaming service's section: its catalog as the first row, then a
+    /// row per genre that catalog declares (`Comedy on Disney+`, `Kids on
+    /// Disney+`). Loaded in small batches like the drill tiles — a wide burst
+    /// is what the add-on hosts throttle — and an empty genre row is dropped
+    /// rather than shipped blank.
+    private func hubProviderRows(
+        for source: TVHubCatalogSource,
+        provider: String
+    ) async -> [TVHubSectionRow] {
+        // Send the manifest's own spelling: the options are matched exactly.
+        let genres = Self.providerGenreOrder
+            .compactMap { wanted in
+                source.genreOptions.first { $0.caseInsensitiveCompare(wanted) == .orderedSame }
+            }
+            .prefix(Self.providerGenreRowLimit)
+        var slots = [TVHubSectionRow?](repeating: nil, count: genres.count + 1)
+        if let items = await hubItems(
+            source, catalogId: source.catalogId, type: source.type, genre: source.genre
+        ), !items.isEmpty {
+            slots[0] = TVHubSectionRow(
+                id: "\(source.addonId)|\(source.catalogId)|all",
+                title: source.name,
+                catalogId: source.catalogId,
+                items: items,
+                addonName: source.addonName
+            )
+        }
+        let batchSize = 4
+        var start = 0
+        let ordered = Array(genres)
+        while start < ordered.count {
+            guard !Task.isCancelled else { break }
+            let end = min(start + batchSize, ordered.count)
+            let batch = Array(ordered[start..<end])
+            let offset = start
+            await withTaskGroup(of: (Int, TVHubSectionRow?).self) { group in
+                for (index, genre) in batch.enumerated() {
+                    group.addTask { [source] in
+                        guard let items = await self.hubItems(
+                            source, catalogId: source.catalogId, type: source.type, genre: genre
+                        ), !items.isEmpty else { return (offset + index + 1, nil) }
+                        return (offset + index + 1, TVHubSectionRow(
+                            id: "\(source.addonId)|\(source.catalogId)|\(genre)",
+                            title: "\(genre) on \(provider)",
+                            catalogId: source.catalogId,
+                            items: items,
+                            addonName: source.addonName
+                        ))
+                    }
+                }
+                for await (slot, row) in group {
+                    slots[slot] = row
+                }
+            }
+            start = end
+        }
+        return slots.compactMap { $0 }
+    }
+
+    /// "Disney+ Movies" → "Disney+"; nil for a name that does not belong to a
+    /// streaming service, so genre and theme rows are never expanded.
+    static func providerName(inCatalogName name: String) -> String? {
+        let tokens = name.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+        guard providerNameTokens.contains(where: { tokens.contains($0) }) else { return nil }
+        var provider = name
+        for suffix in [" Movies", " Series", " Shows", " TV", " Anime"] {
+            if provider.lowercased().hasSuffix(suffix.lowercased()) {
+                provider = String(provider.dropLast(suffix.count))
+                break
+            }
+        }
+        provider = provider.trimmingCharacters(in: .whitespacesAndNewlines)
+        return provider.isEmpty ? nil : provider
+    }
+
+    /// The words a catalog's name uses to say which service it belongs to.
+    private static let providerNameTokens: Set<String> = [
+        "netflix", "disney", "prime", "apple", "max", "hbo", "paramount",
+        "hulu", "crave", "peacock", "showtime", "starz", "britbox", "tubi", "pluto",
+    ]
+
+    /// The order a service's genre rows appear in. The catalog offers the full
+    /// TMDB list; leading with the family/kids rows is what makes a provider
+    /// tab read as the service rather than as a second genre browser.
+    private static let providerGenreOrder = [
+        "Kids", "Family", "Comedy", "Animation", "Action", "Action & Adventure",
+        "Adventure", "Drama", "Sci-Fi & Fantasy", "Science Fiction", "Fantasy",
+        "Mystery", "Crime", "Thriller", "Documentary",
+    ]
+    /// A provider section is the service's slate, not a genre browser: this
+    /// many genre rows (plus the service's own list) and no more.
+    private static let providerGenreRowLimit = 6
 
     /// One catalog's titles. The trailing `rec-drill:<rowId>` tile is a link to
     /// the drilldown, not a title, so it never reaches a row.

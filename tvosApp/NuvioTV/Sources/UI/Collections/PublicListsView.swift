@@ -24,6 +24,10 @@ struct PublicListsView: View {
     @State private var errorMessage: String?
     @FocusState private var focusedCardID: String?
     @FocusState private var backFocused: Bool
+    /// The list behind each row, so holding a card can offer to pin that very
+    /// list instead of making the viewer find it again in the picker.
+    @State private var listByRowID: [String: TraktPublicListSummary] = [:]
+    @State private var pendingAdd: TraktPublicListSummary?
 
     init(
         meta: NuvioMeta,
@@ -83,7 +87,10 @@ struct PublicListsView: View {
                             onSelect: { item in
                                 onSelect(item.id, item.type)
                             },
-                            onLongPress: nil
+                            onLongPress: { _ in
+                                guard let list = listByRowID[row.id] else { return }
+                                pendingAdd = list
+                            }
                         )
                         .id(row.id)
                     }
@@ -99,7 +106,8 @@ struct PublicListsView: View {
                 switch update {
                 case let .lists(count):
                     total = count
-                case let .row(row):
+                case let .row(row, list):
+                    listByRowID[row.id] = list
                     rows.append(row)
                 case let .finished:
                     isLoading = false
@@ -115,6 +123,44 @@ struct PublicListsView: View {
             if !loading && rows.isEmpty { backFocused = true }
         }
         .onExitCommand(perform: onBack)
+        // Holding any card in a list row offers that list itself, which is the
+        // list the viewer is actually looking at — the header's picker makes
+        // them find it again from scratch.
+        .alert(
+            L10n.string("public_lists_add_confirm_title", fallback: "Add this list to Home"),
+            isPresented: Binding(
+                get: { pendingAdd != nil },
+                set: { if !$0 { pendingAdd = nil } }
+            ),
+            presenting: pendingAdd
+        ) { list in
+            Button(L10n.string("tvos_settings_add", fallback: "Add")) {
+                addToHome(list)
+                pendingAdd = nil
+            }
+            Button(L10n.string("action_cancel", fallback: "Cancel"), role: .cancel) {
+                pendingAdd = nil
+            }
+        } message: { list in
+            Text(list.displayTitle)
+        }
+    }
+
+    /// The same `provider: trakt` source the collections editor writes, so the
+    /// pinned shelf is indistinguishable from one built by hand.
+    private func addToHome(_ list: TraktPublicListSummary) {
+        let listId = Int64(list.id)
+        let source: [String: Any] = [
+            "provider": "trakt",
+            "title": list.displayTitle,
+            "traktListId": listId,
+            "trakt_list_id": listId,
+            "mediaType": "all",
+            "media_type": "all",
+            "sortBy": "rank",
+            "sortHow": "asc"
+        ]
+        CollectionQuickAdd.addList(source: source, fallbackTitle: list.displayTitle)
     }
 
     private var header: some View {
@@ -171,9 +217,13 @@ struct PublicListsView: View {
 
     private var subtitle: String {
         let title = meta.name
-        guard total > 0 else { return title }
+        let hint = L10n.string(
+            "public_lists_hold_hint",
+            fallback: "hold a card to add its list to Home"
+        )
+        guard total > 0 else { return "\(title) · \(hint)" }
         let count = total == 1 ? "1 public list includes this title" : "\(total) public lists include this title"
-        return "\(title) · \(count)"
+        return "\(title) · \(count) · \(hint)"
     }
 
     private var firstFocusID: String? {
@@ -187,7 +237,7 @@ struct PublicListsView: View {
 final class PublicListsViewModel: ObservableObject {
     enum Update {
         case lists(Int)
-        case row(TVHubSectionRow)
+        case row(TVHubSectionRow, TraktPublicListSummary)
         case finished
         case failed(String)
     }
@@ -221,7 +271,7 @@ final class PublicListsViewModel: ObservableObject {
                     catalogId: "trakt-list-\(list.id)",
                     items: visible,
                     addonName: L10n.string("public_lists_source", fallback: "from Trakt")
-                )))
+                ), list))
             }
             emit(.finished)
         } catch {
