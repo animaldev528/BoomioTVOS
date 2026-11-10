@@ -28,6 +28,11 @@ struct PublicListsView: View {
     /// list instead of making the viewer find it again in the picker.
     @State private var listByRowID: [String: TraktPublicListSummary] = [:]
     @State private var pendingAdd: TraktPublicListSummary?
+    /// The add-to-Home panel. The card's hold-menu is built inside
+    /// `PosterCard` and cannot take an extra item, so the action gets its own
+    /// focusable panel instead of a gesture that would never reach it.
+    @State private var showAddPicker = false
+    @FocusState private var pickerFocusID: String?
 
     init(
         meta: NuvioMeta,
@@ -87,10 +92,7 @@ struct PublicListsView: View {
                             onSelect: { item in
                                 onSelect(item.id, item.type)
                             },
-                            onLongPress: { _ in
-                                guard let list = listByRowID[row.id] else { return }
-                                pendingAdd = list
-                            }
+                            onLongPress: nil
                         )
                         .id(row.id)
                     }
@@ -144,6 +146,90 @@ struct PublicListsView: View {
         } message: { list in
             Text(list.displayTitle)
         }
+        .overlay { if showAddPicker { addPicker } }
+    }
+
+    /// The lists this title was found in, each one a press away from Home.
+    /// Falls back to the full picker when nothing has loaded yet, so the header
+    /// button is never a dead end.
+    private var addPicker: some View {
+        ZStack {
+            Color.black.opacity(0.94).ignoresSafeArea()
+            VStack(alignment: .leading, spacing: 28) {
+                Text(L10n.string(
+                    "public_lists_add_confirm_title",
+                    fallback: "Add this list to Home"
+                ))
+                .font(.appFont(size: 34, weight: .bold))
+                .foregroundColor(.white)
+
+                if rows.isEmpty {
+                    Text(L10n.string(
+                        "public_lists_empty",
+                        fallback: "No public Trakt lists include this title"
+                    ))
+                    .font(.appFont(size: 22))
+                    .foregroundColor(.white.opacity(0.6))
+                    Button(action: onAddListToHome) {
+                        Text(L10n.string("public_lists_add_to_home", fallback: "Add a list to Home"))
+                            .font(.appFont(size: 20, weight: .semibold))
+                            .padding(.horizontal, 22)
+                            .padding(.vertical, 12)
+                            .background(Color.white.opacity(0.14), in: Capsule())
+                            .foregroundColor(.white)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 14) {
+                            ForEach(rows) { row in
+                                if let list = listByRowID[row.id] {
+                                    Button {
+                                        addToHome(list)
+                                        showAddPicker = false
+                                    } label: {
+                                        HStack(spacing: 16) {
+                                            Text(list.displayTitle)
+                                                .font(.appFont(size: 22, weight: .semibold))
+                                            Spacer(minLength: 0)
+                                            Image(systemName: "plus.rectangle.on.rectangle")
+                                                .font(.appFont(size: 20))
+                                        }
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 24)
+                                        .padding(.vertical, 16)
+                                        .background(
+                                            Color.white.opacity(pickerFocusID == row.id ? 0.26 : 0.10),
+                                            in: RoundedRectangle(cornerRadius: 14)
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                    .focused($pickerFocusID, equals: row.id)
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: 900, alignment: .leading)
+                }
+
+                Button {
+                    showAddPicker = false
+                } label: {
+                    Text(L10n.string("action_cancel", fallback: "Cancel"))
+                        .font(.appFont(size: 20, weight: .semibold))
+                        .padding(.horizontal, 22)
+                        .padding(.vertical, 12)
+                        .background(Color.white.opacity(0.10), in: Capsule())
+                        .foregroundColor(.white)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(64)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .focusSection()
+        .onAppear { pickerFocusID = rows.first?.id }
+        .onExitCommand { showAddPicker = false }
     }
 
     /// The same `provider: trakt` source the collections editor writes, so the
@@ -189,7 +275,7 @@ struct PublicListsView: View {
 
                 Spacer(minLength: 0)
 
-                Button(action: onAddListToHome) {
+                Button(action: { showAddPicker = true }) {
                     HStack(spacing: 8) {
                         Image(systemName: "plus.rectangle.on.rectangle")
                         Text(L10n.string(
@@ -219,7 +305,7 @@ struct PublicListsView: View {
         let title = meta.name
         let hint = L10n.string(
             "public_lists_hold_hint",
-            fallback: "hold a card to add its list to Home"
+            fallback: "press Add a list to Home to pin one of these lists"
         )
         guard total > 0 else { return "\(title) · \(hint)" }
         let count = total == 1 ? "1 public list includes this title" : "\(total) public lists include this title"

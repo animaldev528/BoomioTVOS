@@ -910,7 +910,15 @@ struct DetailsScreen: View {
             let available = displayed.filter { $0.unavailabilityReason == nil && !$0.isNotPlayable }
             let pool: [NuvioStream]
             if preserveAddonOrder {
-                pool = available
+                // The add-on's own order, but a single episode always ahead of
+                // a season pack: the pack is what the picker would otherwise
+                // take first for a long-running show.
+                pool = SmartPlaybackSelector.preferringEpisode(
+                    available,
+                    target: viewModel.prefetchedEpisode.map {
+                        SmartPlaybackSelector.EpisodeTarget(season: $0.season, episode: $0.episode)
+                    }
+                )
             } else {
                 // Filter out 0-res / ticket streams if valid streams exist
                 let valid = available.filter {
@@ -945,7 +953,10 @@ struct DetailsScreen: View {
                 shouldMatchSubtitles: smartSubtitleMatching,
                 includeDebrid: debrid.isEnabled || TorrentSettings.isEnabled(),
                 preferredTags: preferredTags,
-                cachedOnly: cachedOnly
+                cachedOnly: cachedOnly,
+                episode: viewModel.prefetchedEpisode.map {
+                    SmartPlaybackSelector.EpisodeTarget(season: $0.season, episode: $0.episode)
+                }
             )
         }
 
@@ -1153,7 +1164,12 @@ struct DetailsScreen: View {
                     let available = displayed.filter { $0.unavailabilityReason == nil && !$0.isNotPlayable }
                     let pool: [NuvioStream]
                     if preserveAddonOrder {
-                        pool = available
+                        pool = SmartPlaybackSelector.preferringEpisode(
+                            available,
+                            target: viewModel.prefetchedEpisode.map {
+                                SmartPlaybackSelector.EpisodeTarget(season: $0.season, episode: $0.episode)
+                            }
+                        )
                     } else {
                         let valid = available.filter {
                             !SmartPlaybackSelector.isLowQualityOrTicketStream($0) && StreamPickerListBuilder.resolution(for: $0) >= 720
@@ -1185,7 +1201,10 @@ struct DetailsScreen: View {
                         shouldMatchSubtitles: smartSubtitleMatching,
                         includeDebrid: debridIsEnabled || torrentIsEnabled,
                         preferredTags: preferredTags,
-                        cachedOnly: cachedOnly
+                        cachedOnly: cachedOnly,
+                        episode: viewModel.prefetchedEpisode.map {
+                            SmartPlaybackSelector.EpisodeTarget(season: $0.season, episode: $0.episode)
+                        }
                     )
                 }
 
@@ -3423,6 +3442,86 @@ actor YouTubeTrailerResolver {
 }
 
 enum SmartPlaybackSelector {
+    /// The episode a stream is being picked for. A season pack and a single
+    /// episode look identical to the quality scorer — the add-ons return both
+    /// for the same `show:season:episode` request — so without this the best
+    /// 2160p stream is very often the 60 GB pack of the whole show, which the
+    /// player then opens at the wrong place. Android passes the episode id
+    /// through and lets its own add-on pick; tvOS has to rank for it.
+    struct EpisodeTarget: Equatable {
+        let season: Int
+        let episode: Int
+    }
+
+    /// Positive when the stream names THIS episode, negative when it names a
+    /// different one or a pack. Zero when the stream names no episode at all
+    /// (debrid entries often carry only a cache label), so unknown streams keep
+    /// their quality order instead of being pushed to the bottom.
+    static func episodeRankingBoost(for stream: NuvioStream, target: EpisodeTarget?) -> Int {
+        guard let target, target.episode > 0 else { return 0 }
+        let text = [stream.name, stream.description, stream.filename]
+            .compactMap { $0 }
+            .joined(separator: " ")
+            .lowercased()
+        guard !text.isEmpty else { return 0 }
+
+        let markers = Self.seasonEpisodeMarkers(in: text)
+        if !markers.isEmpty {
+            let matches = markers.contains { $0.season == target.season && $0.episode == target.episode }
+            return matches ? 45_000 : -45_000
+        }
+        // No `SxxExx` at all. "Season 1-37", "S01-S36", "Complete Series" are
+        // packs, which are the wrong stream for a single episode whenever a
+        // matching release is also on offer.
+        if text.range(of: #"s\d{1,2}\s*-\s*s?\d{1,2}"#, options: .regularExpression) != nil {
+            return -30_000
+        }
+        if text.range(of: #"season\s*\d{1,2}\s*-\s*\d{1,2}"#, options: .regularExpression) != nil {
+            return -30_000
+        }
+        if text.contains("complete series") || text.contains("complete season")
+            || text.contains("season pack") || text.contains("series pack") {
+            return -30_000
+        }
+        return 0
+    }
+
+    /// Every `S03E07` / `3x07` in the text, however the scene punctuates it.
+    private static func seasonEpisodeMarkers(in text: String) -> [(season: Int, episode: Int)] {
+        var markers: [(season: Int, episode: Int)] = []
+        let patterns = [
+            #"s(\d{1,2})[\s._-]*e(\d{1,3})"#,
+            #"\b(\d{1,2})x(\d{1,3})\b"#,
+        ]
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let range = NSRange(text.startIndex..<text.endIndex, in: text)
+            for match in regex.matches(in: text, range: range) where match.numberOfRanges > 2 {
+                guard let s = Range(match.range(at: 1), in: text),
+                      let e = Range(match.range(at: 2), in: text),
+                      let season = Int(text[s]), let episode = Int(text[e]) else { continue }
+                markers.append((season, episode))
+            }
+        }
+        return markers
+    }
+
+    /// Stable order that keeps every episode match ahead of every pack, used on
+    /// the "preserve the add-on's order" path, which otherwise takes whichever
+    /// stream the add-on happened to list first.
+    static func preferringEpisode(_ streams: [NuvioStream], target: EpisodeTarget?) -> [NuvioStream] {
+        guard let target else { return streams }
+        let scored = streams.enumerated().map { index, stream in
+            (index: index, stream: stream, boost: episodeRankingBoost(for: stream, target: target))
+        }
+        return scored
+            .sorted { lhs, rhs in
+                if lhs.boost != rhs.boost { return lhs.boost > rhs.boost }
+                return lhs.index < rhs.index
+            }
+            .map(\.stream)
+    }
+
     /// Cached-only is a VOD preference. Live and sports catalogs often have
     /// no cache markers. Keep the legacy `tv` alias local to this policy instead
     /// of changing shared type classification used by series handling.
@@ -3440,7 +3539,8 @@ enum SmartPlaybackSelector {
         shouldMatchSubtitles: Bool,
         includeDebrid: Bool = false,
         preferredTags: StreamQualityTags? = nil,
-        cachedOnly: Bool = false
+        cachedOnly: Bool = false,
+        episode: EpisodeTarget? = nil
     ) -> NuvioStream? {
         rankedStreams(
             from: streams,
@@ -3449,7 +3549,8 @@ enum SmartPlaybackSelector {
             shouldMatchSubtitles: shouldMatchSubtitles,
             includeDebrid: includeDebrid,
             preferredTags: preferredTags,
-            cachedOnly: cachedOnly
+            cachedOnly: cachedOnly,
+            episode: episode
         ).first
     }
 
@@ -3461,7 +3562,8 @@ enum SmartPlaybackSelector {
         shouldMatchSubtitles: Bool,
         includeDebrid: Bool = false,
         preferredTags: StreamQualityTags? = nil,
-        cachedOnly: Bool = false
+        cachedOnly: Bool = false,
+        episode: EpisodeTarget? = nil
     ) -> [NuvioStream] {
         let playable = streams.enumerated().compactMap { index, stream -> (index: Int, stream: NuvioStream)? in
             guard stream.unavailabilityReason == nil else { return nil }
@@ -3520,7 +3622,8 @@ enum SmartPlaybackSelector {
             } else {
                 hardwareBoost = 0
             }
-            return (index, stream, subtitleScore + qualityScore + featureScore + resumeScore + cachedBoost + lowQualityPenalty + hardwareBoost)
+            let episodeBoost = episodeRankingBoost(for: stream, target: episode)
+            return (index, stream, subtitleScore + qualityScore + featureScore + resumeScore + cachedBoost + lowQualityPenalty + hardwareBoost + episodeBoost)
         }
 
         return ranked.sorted { lhs, rhs in
